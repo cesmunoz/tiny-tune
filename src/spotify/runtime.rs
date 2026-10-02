@@ -1,7 +1,7 @@
 use std::{sync::Arc, thread};
 
 use async_channel::{Receiver, Sender};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::domain::AppError;
 
@@ -57,6 +57,18 @@ async fn run_supervisor(
                     SessionStart::Interactive,
                 )
                 .await;
+            }
+            SpotifyCommand::Logout => {
+                let credentials_deleted = credentials.delete_refresh_token().is_ok();
+                let _ = events.send(SpotifyEvent::SignedOut).await;
+                if !credentials_deleted {
+                    warn!("secure credential storage is unavailable");
+                    let _ = events
+                        .send(SpotifyEvent::RecoverableError(
+                            AppError::CredentialStoreUnavailable,
+                        ))
+                        .await;
+                }
             }
             SpotifyCommand::Shutdown => break,
             SpotifyCommand::PlayPlaylist { .. }

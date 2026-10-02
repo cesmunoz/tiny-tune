@@ -69,4 +69,21 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
                 }))
                 .child("Next"),
         )
+        .child(
+            div()
+                .id("logout")
+                .focusable()
+                .tab_stop(true)
+                .px_4()
+                .py_2()
+                .rounded_full()
+                .border_1()
+                .border_color(rgb(BORDER))
+                .cursor_pointer()
+                .hover(|style| style.bg(rgb(BORDER)))
+                .on_click(cx.listener(|app, _, _, cx| {
+                    app.send(SpotifyCommand::Logout, cx);
+                }))
+                .child("Log out"),
+        )
 }

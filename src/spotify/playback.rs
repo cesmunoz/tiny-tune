@@ -82,7 +82,7 @@ pub async fn run_session(
     let session = Session::new(session_config, None);
     let audio = audio::initialize(session.clone())?;
     let mut player_events = audio.events;
-    let credentials = Credentials::with_access_token(access_token.clone());
+    let spotify_credentials = Credentials::with_access_token(access_token.clone());
     let connect_config = ConnectConfig {
         name: "Tiny Tune".into(),
         ..ConnectConfig::default()
@@ -90,7 +90,7 @@ pub async fn run_session(
     let (spirc, spirc_task) = Spirc::new(
         connect_config,
         session.clone(),
-        credentials,
+        spotify_credentials,
         audio.player,
         audio.mixer,
     )
@@ -116,7 +116,10 @@ pub async fn run_session(
                 return Err(anyhow!("Spotify Connect session ended"));
             }
             command = commands.recv() => {
-                if handle_command(command, &spirc, &session, &mut spirc_task).await? {
+                if let Some(exit) = handle_command(command, &spirc, &session, &mut spirc_task).await? {
+                    if exit == SessionExit::Logout {
+                        finish_logout(events, credentials).await;
+                    }
                     return Ok(());
                 }
             }
@@ -132,12 +135,18 @@ pub async fn run_session(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionExit {
+    Logout,
+    Shutdown,
+}
+
 async fn handle_command<F>(
     command: Result<SpotifyCommand, async_channel::RecvError>,
     spirc: &Spirc,
     session: &Session,
     spirc_task: &mut std::pin::Pin<Box<F>>,
-) -> Result<bool>
+) -> Result<Option<SessionExit>>
 where
     F: Future<Output = ()>,
 {
@@ -150,14 +159,33 @@ where
         Ok(SpotifyCommand::Next) => spirc.next()?,
         Ok(SpotifyCommand::LoginAndPlayLikedSongs) => play_liked_songs(spirc, session)?,
         Ok(SpotifyCommand::RestoreSession) => {}
+        Ok(SpotifyCommand::Logout) => {
+            spirc.shutdown()?;
+            let _ = tokio::time::timeout(Duration::from_secs(2), spirc_task).await;
+            return Ok(Some(SessionExit::Logout));
+        }
         Ok(SpotifyCommand::Shutdown) | Err(_) => {
             spirc.shutdown()?;
             let _ = tokio::time::timeout(Duration::from_secs(2), spirc_task).await;
-            return Ok(true);
+            return Ok(Some(SessionExit::Shutdown));
         }
     }
 
-    Ok(false)
+    Ok(None)
+}
+
+async fn finish_logout(events: &Sender<SpotifyEvent>, credentials: &dyn CredentialStore) {
+    let credentials_deleted = credentials.delete_refresh_token().is_ok();
+    send(events, SpotifyEvent::SignedOut).await;
+
+    if !credentials_deleted {
+        warn!("secure credential storage is unavailable");
+        send(
+            events,
+            SpotifyEvent::RecoverableError(AppError::CredentialStoreUnavailable),
+        )
+        .await;
+    }
 }
 
 fn play_liked_songs(spirc: &Spirc, session: &Session) -> Result<()> {

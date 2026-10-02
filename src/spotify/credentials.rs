@@ -9,6 +9,7 @@ const REFRESH_TOKEN_ACCOUNT: &str = "refresh-token";
 pub trait CredentialStore: Send + Sync {
     fn load_refresh_token(&self) -> Result<Option<SecretString>, CredentialError>;
     fn save_refresh_token(&self, token: &SecretString) -> Result<(), CredentialError>;
+    fn delete_refresh_token(&self) -> Result<(), CredentialError>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +48,13 @@ impl CredentialStore for SystemCredentialStore {
         Self::entry()?
             .set_password(token.expose_secret())
             .map_err(|_| CredentialError)
+    }
+
+    fn delete_refresh_token(&self) -> Result<(), CredentialError> {
+        match Self::entry()?.delete_credential() {
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+            Err(_) => Err(CredentialError),
+        }
     }
 }
 

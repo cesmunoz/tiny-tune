@@ -24,6 +24,14 @@ impl CredentialStore for MemoryCredentialStore {
             Some(token.expose_secret().to_owned());
         Ok(())
     }
+
+    fn delete_refresh_token(&self) -> Result<(), CredentialError> {
+        self.refresh_token
+            .lock()
+            .map_err(|_| CredentialError)?
+            .take();
+        Ok(())
+    }
 }
 
 #[test]
@@ -44,6 +52,19 @@ fn credential_store_saves_without_exposing_the_token() {
 #[test]
 fn missing_credentials_load_as_none() {
     let store = MemoryCredentialStore::default();
+
+    assert!(store.load_refresh_token().expect("load token").is_none());
+}
+
+#[test]
+fn deleting_credentials_is_idempotent() {
+    let store = MemoryCredentialStore::default();
+    store
+        .save_refresh_token(&SecretString::from("refresh-token-value"))
+        .expect("save token");
+
+    store.delete_refresh_token().expect("delete token");
+    store.delete_refresh_token().expect("delete token again");
 
     assert!(store.load_refresh_token().expect("load token").is_none());
 }
