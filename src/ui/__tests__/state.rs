@@ -16,6 +16,18 @@ fn starts_signed_out_without_session_data() {
 }
 
 #[test]
+fn restores_or_returns_to_signed_out_on_startup() {
+    let mut state = AppState::default();
+
+    state.apply(SpotifyEvent::RestoringSession);
+    assert_eq!(state.view, ViewState::RestoringSession);
+    assert!(!state.connected());
+
+    state.apply(SpotifyEvent::SignedOut);
+    assert_eq!(state, AppState::default());
+}
+
+#[test]
 fn follows_authentication_and_connection_transitions() {
     let mut state = AppState::default();
 

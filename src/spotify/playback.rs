@@ -13,22 +13,54 @@ use crate::{config::SpotifyConfig, domain::AppError};
 
 use super::{
     audio,
-    auth::authenticate,
+    auth::{authenticate, refresh},
     catalog::fetch_playlists,
     credentials::CredentialStore,
     messages::{SpotifyCommand, SpotifyEvent},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionStart {
+    Interactive,
+    Stored,
+}
+
 pub async fn run_session(
     commands: &Receiver<SpotifyCommand>,
     events: &Sender<SpotifyEvent>,
     credentials: &dyn CredentialStore,
+    start: SessionStart,
 ) -> Result<()> {
-    send(events, SpotifyEvent::Authenticating).await;
-
     let session_config = SessionConfig::default();
     let config = SpotifyConfig::from_env(session_config.client_id.clone());
-    let Ok(authenticated) = authenticate(&config).await else {
+    let authenticated = match start {
+        SessionStart::Interactive => {
+            send(events, SpotifyEvent::Authenticating).await;
+            authenticate(&config).await
+        }
+        SessionStart::Stored => {
+            send(events, SpotifyEvent::RestoringSession).await;
+            let refresh_token = match credentials.load_refresh_token() {
+                Ok(Some(refresh_token)) => refresh_token,
+                Ok(None) => {
+                    send(events, SpotifyEvent::SignedOut).await;
+                    return Ok(());
+                }
+                Err(_) => {
+                    warn!("secure credential storage is unavailable");
+                    send(events, SpotifyEvent::SignedOut).await;
+                    send(
+                        events,
+                        SpotifyEvent::RecoverableError(AppError::CredentialStoreUnavailable),
+                    )
+                    .await;
+                    return Ok(());
+                }
+            };
+            refresh(&config, &refresh_token).await
+        }
+    };
+    let Ok(authenticated) = authenticated else {
         warn!("Spotify authentication failed");
         send(
             events,
@@ -65,7 +97,9 @@ pub async fn run_session(
     .await?;
     let mut spirc_task = Box::pin(spirc_task);
 
-    play_liked_songs(&spirc, &session)?;
+    if start == SessionStart::Interactive {
+        play_liked_songs(&spirc, &session)?;
+    }
     send(events, SpotifyEvent::Ready).await;
     load_playlists(events, &access_token).await;
     if !credentials_persisted {
@@ -115,6 +149,7 @@ where
         Ok(SpotifyCommand::Previous) => spirc.prev()?,
         Ok(SpotifyCommand::Next) => spirc.next()?,
         Ok(SpotifyCommand::LoginAndPlayLikedSongs) => play_liked_songs(spirc, session)?,
+        Ok(SpotifyCommand::RestoreSession) => {}
         Ok(SpotifyCommand::Shutdown) | Err(_) => {
             spirc.shutdown()?;
             let _ = tokio::time::timeout(Duration::from_secs(2), spirc_task).await;

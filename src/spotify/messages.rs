@@ -2,6 +2,7 @@ use crate::domain::{AppError, PlaylistSummary};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpotifyCommand {
+    RestoreSession,
     LoginAndPlayLikedSongs,
     PlayPlaylist { uri: String },
     TogglePlayPause,
@@ -12,6 +13,8 @@ pub enum SpotifyCommand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpotifyEvent {
+    RestoringSession,
+    SignedOut,
     Authenticating,
     Connecting,
     Ready,

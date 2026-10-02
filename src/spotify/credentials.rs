@@ -1,12 +1,13 @@
 use std::{error::Error, fmt};
 
-use keyring::Entry;
+use keyring::{Entry, Error as KeyringError};
 use secrecy::{ExposeSecret, SecretString};
 
 const SERVICE: &str = "com.tiny-tune.spotify";
 const REFRESH_TOKEN_ACCOUNT: &str = "refresh-token";
 
 pub trait CredentialStore: Send + Sync {
+    fn load_refresh_token(&self) -> Result<Option<SecretString>, CredentialError>;
     fn save_refresh_token(&self, token: &SecretString) -> Result<(), CredentialError>;
 }
 
@@ -34,6 +35,14 @@ impl SystemCredentialStore {
 }
 
 impl CredentialStore for SystemCredentialStore {
+    fn load_refresh_token(&self) -> Result<Option<SecretString>, CredentialError> {
+        match Self::entry()?.get_password() {
+            Ok(token) => Ok(Some(SecretString::from(token))),
+            Err(KeyringError::NoEntry) => Ok(None),
+            Err(_) => Err(CredentialError),
+        }
+    }
+
     fn save_refresh_token(&self, token: &SecretString) -> Result<(), CredentialError> {
         Self::entry()?
             .set_password(token.expose_secret())

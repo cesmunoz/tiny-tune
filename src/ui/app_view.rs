@@ -90,6 +90,7 @@ fn title_for(state: ViewState) -> &'static str {
         ViewState::Playing => "Your music is playing",
         ViewState::Paused => "Playback paused",
         ViewState::Authenticating => "Spotify sign in",
+        ViewState::RestoringSession => "Welcome back",
         ViewState::Connecting | ViewState::Loading => "Almost there",
         ViewState::Ready => "Tiny Tune is connected",
         ViewState::ReauthRequired => "Reconnect Spotify",

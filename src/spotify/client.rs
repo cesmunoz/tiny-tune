@@ -22,6 +22,9 @@ impl SpotifyHandle {
 pub fn spawn() -> (SpotifyHandle, Receiver<SpotifyEvent>) {
     let (command_tx, command_rx) = async_channel::bounded(16);
     let (event_tx, event_rx) = async_channel::bounded(32);
+    command_tx
+        .try_send(SpotifyCommand::RestoreSession)
+        .expect("new Spotify command queue should accept session restoration");
     runtime::spawn(command_rx, event_tx, Arc::new(SystemCredentialStore::new()));
 
     (

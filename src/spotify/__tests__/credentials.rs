@@ -9,17 +9,16 @@ struct MemoryCredentialStore {
     refresh_token: Mutex<Option<String>>,
 }
 
-impl MemoryCredentialStore {
-    fn saved_refresh_token(&self) -> Result<Option<String>, CredentialError> {
+impl CredentialStore for MemoryCredentialStore {
+    fn load_refresh_token(&self) -> Result<Option<SecretString>, CredentialError> {
         Ok(self
             .refresh_token
             .lock()
             .map_err(|_| CredentialError)?
-            .clone())
+            .clone()
+            .map(SecretString::from))
     }
-}
 
-impl CredentialStore for MemoryCredentialStore {
     fn save_refresh_token(&self, token: &SecretString) -> Result<(), CredentialError> {
         *self.refresh_token.lock().map_err(|_| CredentialError)? =
             Some(token.expose_secret().to_owned());
@@ -34,9 +33,17 @@ fn credential_store_saves_without_exposing_the_token() {
 
     store.save_refresh_token(&token).expect("save token");
 
-    assert_eq!(
-        store.saved_refresh_token().expect("read test store"),
-        Some("refresh-token-value".into())
-    );
+    let loaded = store
+        .load_refresh_token()
+        .expect("load token")
+        .expect("stored token");
+    assert_eq!(loaded.expose_secret(), "refresh-token-value");
     assert!(!format!("{token:?}").contains("refresh-token-value"));
+}
+
+#[test]
+fn missing_credentials_load_as_none() {
+    let store = MemoryCredentialStore::default();
+
+    assert!(store.load_refresh_token().expect("load token").is_none());
 }

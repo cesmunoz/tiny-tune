@@ -11,7 +11,7 @@ use super::{
 pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
     let is_busy = matches!(
         app.ui.view,
-        ViewState::Authenticating | ViewState::Connecting
+        ViewState::RestoringSession | ViewState::Authenticating | ViewState::Connecting
     );
 
     div()
@@ -30,7 +30,7 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
         .on_click(cx.listener(|app, _, _, cx| {
             if !matches!(
                 app.ui.view,
-                ViewState::Authenticating | ViewState::Connecting
+                ViewState::RestoringSession | ViewState::Authenticating | ViewState::Connecting
             ) {
                 app.send(SpotifyCommand::LoginAndPlayLikedSongs, cx);
             }

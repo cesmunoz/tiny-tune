@@ -8,7 +8,7 @@ use crate::domain::AppError;
 use super::{
     credentials::CredentialStore,
     messages::{SpotifyCommand, SpotifyEvent},
-    playback::run_session,
+    playback::{SessionStart, run_session},
 };
 
 pub fn spawn(
@@ -40,13 +40,23 @@ async fn run_supervisor(
 ) {
     while let Ok(command) = commands.recv().await {
         match command {
+            SpotifyCommand::RestoreSession => {
+                run_and_report(
+                    &commands,
+                    &events,
+                    credentials.as_ref(),
+                    SessionStart::Stored,
+                )
+                .await;
+            }
             SpotifyCommand::LoginAndPlayLikedSongs => {
-                if let Err(error) = run_session(&commands, &events, credentials.as_ref()).await {
-                    error!(%error, "Spotify session failed");
-                    let _ = events
-                        .send(SpotifyEvent::FatalError(AppError::Unexpected))
-                        .await;
-                }
+                run_and_report(
+                    &commands,
+                    &events,
+                    credentials.as_ref(),
+                    SessionStart::Interactive,
+                )
+                .await;
             }
             SpotifyCommand::Shutdown => break,
             SpotifyCommand::PlayPlaylist { .. }
@@ -61,4 +71,18 @@ async fn run_supervisor(
     }
 
     info!("Spotify backend stopped");
+}
+
+async fn run_and_report(
+    commands: &Receiver<SpotifyCommand>,
+    events: &Sender<SpotifyEvent>,
+    credentials: &dyn CredentialStore,
+    start: SessionStart,
+) {
+    if let Err(error) = run_session(commands, events, credentials, start).await {
+        error!(%error, "Spotify session failed");
+        let _ = events
+            .send(SpotifyEvent::FatalError(AppError::Unexpected))
+            .await;
+    }
 }

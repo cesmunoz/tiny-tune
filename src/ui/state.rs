@@ -6,6 +6,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ViewState {
     SignedOut,
+    RestoringSession,
     Authenticating,
     Connecting,
     Ready,
@@ -45,6 +46,11 @@ impl AppState {
 
     pub fn apply(&mut self, event: SpotifyEvent) {
         match event {
+            SpotifyEvent::RestoringSession => {
+                self.view = ViewState::RestoringSession;
+                self.status = "Restoring your Spotify session".into();
+            }
+            SpotifyEvent::SignedOut => *self = Self::default(),
             SpotifyEvent::Authenticating => {
                 self.view = ViewState::Authenticating;
                 self.status = "Finish signing in in your browser".into();
