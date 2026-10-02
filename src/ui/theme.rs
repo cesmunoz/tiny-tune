@@ -1,0 +1,9 @@
+pub const BACKGROUND: u32 = 0x10_13_11;
+pub const SURFACE: u32 = 0x18_1d_1a;
+pub const BORDER: u32 = 0x29_32_2c;
+pub const TEXT: u32 = 0xf2_f5_f3;
+pub const MUTED: u32 = 0x9b_a8_a0;
+pub const ACCENT: u32 = 0x1e_d7_60;
+pub const ACCENT_HOVER: u32 = 0x39_e4_77;
+pub const ERROR: u32 = 0xff_7a_7a;
+pub const ON_ACCENT: u32 = 0x07_13_0b;
