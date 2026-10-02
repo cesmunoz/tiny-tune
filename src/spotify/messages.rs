@@ -1,4 +1,4 @@
-use crate::domain::PlaylistSummary;
+use crate::domain::{AppError, PlaylistSummary};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpotifyCommand {
@@ -20,6 +20,6 @@ pub enum SpotifyEvent {
     Playing { track_uri: String },
     Paused { track_uri: String },
     Stopped,
-    Notice { message: String },
-    Error { message: String },
+    RecoverableError(AppError),
+    FatalError(AppError),
 }

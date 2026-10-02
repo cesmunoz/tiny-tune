@@ -1,5 +1,6 @@
 use anyhow::Result;
 use librespot::oauth::OAuthClientBuilder;
+use secrecy::SecretString;
 
 use crate::config::SpotifyConfig;
 
@@ -13,7 +14,12 @@ const OAUTH_SCOPES: &[&str] = &[
     "playlist-read-collaborative",
 ];
 
-pub async fn authenticate(config: &SpotifyConfig) -> Result<String> {
+pub struct AuthenticatedSession {
+    pub access_token: String,
+    pub refresh_token: SecretString,
+}
+
+pub async fn authenticate(config: &SpotifyConfig) -> Result<AuthenticatedSession> {
     let oauth = OAuthClientBuilder::new(
         &config.client_id,
         &config.redirect_uri,
@@ -23,5 +29,10 @@ pub async fn authenticate(config: &SpotifyConfig) -> Result<String> {
     .with_custom_message(OAUTH_SUCCESS_HTML)
     .build()?;
 
-    Ok(oauth.get_access_token_async().await?.access_token)
+    let token = oauth.get_access_token_async().await?;
+
+    Ok(AuthenticatedSession {
+        access_token: token.access_token,
+        refresh_token: SecretString::from(token.refresh_token),
+    })
 }

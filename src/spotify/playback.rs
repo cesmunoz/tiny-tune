@@ -7,26 +7,43 @@ use librespot::{
     core::{authentication::Credentials, config::SessionConfig, session::Session},
     playback::player::PlayerEvent,
 };
-use tracing::error;
+use tracing::{error, warn};
 
-use crate::config::SpotifyConfig;
+use crate::{config::SpotifyConfig, domain::AppError};
 
 use super::{
     audio,
     auth::authenticate,
     catalog::fetch_playlists,
+    credentials::CredentialStore,
     messages::{SpotifyCommand, SpotifyEvent},
 };
 
 pub async fn run_session(
     commands: &Receiver<SpotifyCommand>,
     events: &Sender<SpotifyEvent>,
+    credentials: &dyn CredentialStore,
 ) -> Result<()> {
     send(events, SpotifyEvent::Authenticating).await;
 
     let session_config = SessionConfig::default();
     let config = SpotifyConfig::from_env(session_config.client_id.clone());
-    let access_token = authenticate(&config).await?;
+    let Ok(authenticated) = authenticate(&config).await else {
+        warn!("Spotify authentication failed");
+        send(
+            events,
+            SpotifyEvent::FatalError(AppError::ReauthenticationRequired),
+        )
+        .await;
+        return Ok(());
+    };
+    let credentials_persisted = credentials
+        .save_refresh_token(&authenticated.refresh_token)
+        .is_ok();
+    if !credentials_persisted {
+        warn!("secure credential storage is unavailable");
+    }
+    let access_token = authenticated.access_token;
 
     send(events, SpotifyEvent::Connecting).await;
 
@@ -51,6 +68,13 @@ pub async fn run_session(
     play_liked_songs(&spirc, &session)?;
     send(events, SpotifyEvent::Ready).await;
     load_playlists(events, &access_token).await;
+    if !credentials_persisted {
+        send(
+            events,
+            SpotifyEvent::RecoverableError(AppError::CredentialStoreUnavailable),
+        )
+        .await;
+    }
 
     loop {
         tokio::select! {
@@ -127,9 +151,7 @@ async fn load_playlists(events: &Sender<SpotifyEvent>, access_token: &str) {
             error!(%error, "failed to load Spotify playlists");
             send(
                 events,
-                SpotifyEvent::Notice {
-                    message: "Connected, but playlists could not be loaded".into(),
-                },
+                SpotifyEvent::RecoverableError(AppError::PlaylistUnavailable),
             )
             .await;
         }
@@ -148,9 +170,9 @@ fn project_player_event(event: PlayerEvent) -> Option<SpotifyEvent> {
             .ok()
             .map(|track_uri| SpotifyEvent::Paused { track_uri }),
         PlayerEvent::Stopped { .. } => Some(SpotifyEvent::Stopped),
-        PlayerEvent::Unavailable { .. } => Some(SpotifyEvent::Error {
-            message: "This track is unavailable".into(),
-        }),
+        PlayerEvent::Unavailable { .. } => {
+            Some(SpotifyEvent::RecoverableError(AppError::TrackUnavailable))
+        }
         _ => None,
     }
 }

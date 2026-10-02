@@ -1,14 +1,21 @@
-use std::thread;
+use std::{sync::Arc, thread};
 
 use async_channel::{Receiver, Sender};
 use tracing::{error, info};
 
+use crate::domain::AppError;
+
 use super::{
+    credentials::CredentialStore,
     messages::{SpotifyCommand, SpotifyEvent},
     playback::run_session,
 };
 
-pub fn spawn(commands: Receiver<SpotifyCommand>, events: Sender<SpotifyEvent>) {
+pub fn spawn(
+    commands: Receiver<SpotifyCommand>,
+    events: Sender<SpotifyEvent>,
+    credentials: Arc<dyn CredentialStore>,
+) {
     thread::Builder::new()
         .name("spotify-backend".into())
         .spawn(move || {
@@ -19,23 +26,25 @@ pub fn spawn(commands: Receiver<SpotifyCommand>, events: Sender<SpotifyEvent>) {
                 .build();
 
             match runtime {
-                Ok(runtime) => runtime.block_on(run_supervisor(commands, events)),
+                Ok(runtime) => runtime.block_on(run_supervisor(commands, events, credentials)),
                 Err(error) => error!(%error, "failed to create Spotify runtime"),
             }
         })
         .expect("failed to spawn Spotify backend thread");
 }
 
-async fn run_supervisor(commands: Receiver<SpotifyCommand>, events: Sender<SpotifyEvent>) {
+async fn run_supervisor(
+    commands: Receiver<SpotifyCommand>,
+    events: Sender<SpotifyEvent>,
+    credentials: Arc<dyn CredentialStore>,
+) {
     while let Ok(command) = commands.recv().await {
         match command {
             SpotifyCommand::LoginAndPlayLikedSongs => {
-                if let Err(error) = run_session(&commands, &events).await {
+                if let Err(error) = run_session(&commands, &events, credentials.as_ref()).await {
                     error!(%error, "Spotify session failed");
                     let _ = events
-                        .send(SpotifyEvent::Error {
-                            message: error.to_string(),
-                        })
+                        .send(SpotifyEvent::FatalError(AppError::Unexpected))
                         .await;
                 }
             }
@@ -45,9 +54,7 @@ async fn run_supervisor(commands: Receiver<SpotifyCommand>, events: Sender<Spoti
             | SpotifyCommand::Previous
             | SpotifyCommand::Next => {
                 let _ = events
-                    .send(SpotifyEvent::Error {
-                        message: "Connect to Spotify first".into(),
-                    })
+                    .send(SpotifyEvent::RecoverableError(AppError::BackendUnavailable))
                     .await;
             }
         }

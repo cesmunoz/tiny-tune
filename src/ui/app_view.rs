@@ -1,14 +1,15 @@
 use gpui::{Context, Render, Window, div, prelude::*, px, rgb};
 
 use super::{
-    app::{TinyTune, ViewState},
+    app::TinyTune,
     header, login_view, player_controls, playlist_list,
+    state::ViewState,
     theme::{BACKGROUND, BORDER, ERROR, MUTED, SURFACE, TEXT},
 };
 
 impl Render for TinyTune {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let status_color = if self.state == ViewState::Failed {
+        let status_color = if self.ui.view == ViewState::Failed {
             rgb(ERROR)
         } else {
             rgb(MUTED)
@@ -17,9 +18,9 @@ impl Render for TinyTune {
             || "RSS unavailable".into(),
             |value| format!("{value} MB RSS"),
         );
-        let has_playlists = !self.playlists.is_empty();
+        let has_playlists = !self.ui.playlists.is_empty();
         let connected = self.connected();
-        let title = title_for(self.state);
+        let title = title_for(self.ui.view);
 
         let playlists = playlist_list::render(self, cx);
         let login = login_view::render(self, cx);
@@ -57,10 +58,10 @@ impl Render for TinyTune {
                         div()
                             .text_sm()
                             .text_color(status_color)
-                            .child(self.status.clone()),
+                            .child(self.ui.status.clone()),
                     )
                     .when(has_playlists, |view| view.child(playlists))
-                    .when_some(self.track_uri.clone(), |view, uri| {
+                    .when_some(self.ui.track_uri.clone(), |view, uri| {
                         view.child(
                             div()
                                 .max_w(px(480.))
@@ -91,6 +92,7 @@ fn title_for(state: ViewState) -> &'static str {
         ViewState::Authenticating => "Spotify sign in",
         ViewState::Connecting | ViewState::Loading => "Almost there",
         ViewState::Ready => "Tiny Tune is connected",
+        ViewState::ReauthRequired => "Reconnect Spotify",
         ViewState::SignedOut | ViewState::Failed => "A smaller Spotify player",
     }
 }

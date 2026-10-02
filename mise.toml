@@ -1,2 +1,26 @@
 [tools]
 rust = "stable"
+
+[tasks.format]
+description = "Format Rust sources"
+run = "cargo xtask format"
+
+[tasks.format-check]
+description = "Verify Rust formatting"
+run = "cargo xtask format-check"
+
+[tasks.lint]
+description = "Run Clippy with warnings denied"
+run = "cargo xtask lint"
+
+[tasks.test]
+description = "Run the test suite"
+run = "cargo xtask test"
+
+[tasks.release]
+description = "Build the optimized binary"
+run = "cargo xtask release"
+
+[tasks.check]
+description = "Run every required quality check"
+run = "cargo xtask check"

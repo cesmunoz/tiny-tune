@@ -3,7 +3,8 @@ use gpui::{Context, div, prelude::*, rgb};
 use crate::spotify::SpotifyCommand;
 
 use super::{
-    app::{TinyTune, ViewState},
+    app::TinyTune,
+    state::ViewState,
     theme::{ACCENT, ACCENT_HOVER, BORDER, ON_ACCENT},
 };
 
@@ -45,7 +46,7 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
                 .on_click(cx.listener(|app, _, _, cx| {
                     app.send(SpotifyCommand::TogglePlayPause, cx);
                 }))
-                .child(if app.state == ViewState::Playing {
+                .child(if app.ui.view == ViewState::Playing {
                     "Pause"
                 } else {
                     "Play"

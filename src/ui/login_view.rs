@@ -3,12 +3,16 @@ use gpui::{Context, div, prelude::*, rgb};
 use crate::spotify::SpotifyCommand;
 
 use super::{
-    app::{TinyTune, ViewState},
+    app::TinyTune,
+    state::ViewState,
     theme::{ACCENT, ACCENT_HOVER, ON_ACCENT},
 };
 
 pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    let is_busy = matches!(app.state, ViewState::Authenticating | ViewState::Connecting);
+    let is_busy = matches!(
+        app.ui.view,
+        ViewState::Authenticating | ViewState::Connecting
+    );
 
     div()
         .id("connect")
@@ -24,7 +28,10 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
         .hover(|style| style.bg(rgb(ACCENT_HOVER)))
         .when(is_busy, |button| button.opacity(0.5))
         .on_click(cx.listener(|app, _, _, cx| {
-            if !matches!(app.state, ViewState::Authenticating | ViewState::Connecting) {
+            if !matches!(
+                app.ui.view,
+                ViewState::Authenticating | ViewState::Connecting
+            ) {
                 app.send(SpotifyCommand::LoginAndPlayLikedSongs, cx);
             }
         }))

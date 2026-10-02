@@ -40,11 +40,23 @@ Click **Connect & play liked songs**, finish login in the browser, and return to
 
 ## Quality checks
 
+Run the complete local quality gate with Cargo only:
+
 ```sh
-mise exec -- cargo fmt --all -- --check
-mise exec -- cargo clippy --all-targets -- -D warnings
-mise exec -- cargo test
+cargo xtask check
 ```
+
+Individual tasks are also available:
+
+```sh
+cargo xtask format
+cargo xtask format-check
+cargo xtask lint
+cargo xtask test
+cargo xtask release
+```
+
+The equivalent `mise run ...` tasks delegate to these Cargo commands.
 
 ## Architecture
 

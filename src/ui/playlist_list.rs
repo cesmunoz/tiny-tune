@@ -15,7 +15,8 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
         .flex_col()
         .gap_2()
         .children(
-            app.playlists
+            app.ui
+                .playlists
                 .clone()
                 .into_iter()
                 .enumerate()
