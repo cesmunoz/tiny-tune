@@ -70,8 +70,7 @@ impl Render for TinyTune {
                                 .child(uri),
                         )
                     })
-                    .when(!connected, |view| view.child(login))
-                    .when(connected, |view| view.child(controls)),
+                    .when(!connected, |view| view.child(login)),
             )
             .child(
                 div()
@@ -82,6 +81,15 @@ impl Render for TinyTune {
                     .child(format!("Window ready in {} ms", self.startup_ms))
                     .child(memory),
             )
+            .when(connected, |view| {
+                view.child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .child(controls),
+                )
+            })
     }
 }
 
