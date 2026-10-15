@@ -1,4 +1,13 @@
-use crate::domain::{AppError, PlaylistSummary};
+use crate::domain::{AppError, PlaybackState, PlaylistSummary};
+
+/// Display-sized BGRA pixels. The encoded download is not retained.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtworkBytes {
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+    pub bgra: Vec<u8>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpotifyCommand {
@@ -9,6 +18,7 @@ pub enum SpotifyCommand {
     TogglePlayPause,
     Previous,
     Next,
+    LoadArtwork { url: String },
     Shutdown,
 }
 
@@ -20,10 +30,9 @@ pub enum SpotifyEvent {
     Connecting,
     Ready,
     PlaylistsLoaded(Vec<PlaylistSummary>),
-    Loading,
-    Playing { track_uri: String },
-    Paused { track_uri: String },
-    Stopped,
+    PlaybackChanged(PlaybackState),
+    ArtworkReady(Box<ArtworkBytes>),
+    ArtworkFailed { url: String },
     RecoverableError(AppError),
     FatalError(AppError),
 }

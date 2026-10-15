@@ -1,3 +1,4 @@
+mod artwork_cache;
 mod config;
 mod diagnostics;
 mod domain;

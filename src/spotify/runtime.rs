@@ -71,6 +71,7 @@ async fn run_supervisor(
                 }
             }
             SpotifyCommand::Shutdown => break,
+            SpotifyCommand::LoadArtwork { .. } => {}
             SpotifyCommand::PlayPlaylist { .. }
             | SpotifyCommand::TogglePlayPause
             | SpotifyCommand::Previous
