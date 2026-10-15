@@ -82,13 +82,7 @@ impl Render for TinyTune {
                     .child(memory),
             )
             .when(connected, |view| {
-                view.child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .justify_center()
-                        .child(controls),
-                )
+                view.child(div().w_full().flex().justify_center().child(controls))
             })
     }
 }
