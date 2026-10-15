@@ -1,8 +1,30 @@
 use crate::{
-    domain::{AppError, PlaylistSummary},
+    domain::{
+        AppError, ImageRef, NowPlaying, PlaybackState, PlaylistSummary, TrackId, TrackSummary,
+    },
     spotify::SpotifyEvent,
     ui::state::{AppState, ViewState},
 };
+
+fn now_playing(name: &str, artists: &[&str]) -> NowPlaying {
+    NowPlaying {
+        track: TrackSummary {
+            id: Some(TrackId::new("4iV5W9uYEdYUVa79Axb7Rh")),
+            spotify_uri: Some("spotify:track:4iV5W9uYEdYUVa79Axb7Rh".into()),
+            name: name.into(),
+            artist_names: artists.iter().map(|artist| (*artist).to_owned()).collect(),
+            album_name: "Hours".into(),
+            duration_ms: 180_000,
+            image: Some(ImageRef {
+                url: "https://i.scdn.co/image/cover".into(),
+                width: Some(160),
+                height: Some(160),
+            }),
+            is_playable: true,
+        },
+        position_ms: 1_500,
+    }
+}
 
 #[test]
 fn starts_signed_out_without_session_data() {
@@ -10,7 +32,8 @@ fn starts_signed_out_without_session_data() {
 
     assert_eq!(state.view, ViewState::SignedOut);
     assert_eq!(state.status, "Ready to connect");
-    assert_eq!(state.track_uri, None);
+    assert_eq!(state.playback, PlaybackState::Idle);
+    assert!(state.now_playing().is_none());
     assert_eq!(state.playlists, []);
     assert!(!state.connected());
 }
@@ -62,23 +85,44 @@ fn stores_playlists_without_changing_the_ready_view() {
 #[test]
 fn follows_playback_transitions_and_clears_stopped_track() {
     let mut state = AppState::default();
-    let track_uri = "spotify:track:example".to_owned();
+    let playing = now_playing("Night Owl", &["Ada", "Bea"]);
 
-    state.apply(SpotifyEvent::Playing {
-        track_uri: track_uri.clone(),
-    });
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Playing {
+        now_playing: playing.clone(),
+    }));
     assert_eq!(state.view, ViewState::Playing);
-    assert_eq!(state.track_uri.as_deref(), Some(track_uri.as_str()));
+    assert_eq!(
+        state.now_playing().map(|item| item.track.name.as_str()),
+        Some("Night Owl")
+    );
+    assert_eq!(
+        state
+            .now_playing()
+            .map(|item| item.track.artist_names.as_slice()),
+        Some(["Ada".to_owned(), "Bea".to_owned()].as_slice())
+    );
+    assert_eq!(
+        state.now_playing().map(|item| item.position_ms),
+        Some(1_500)
+    );
+    assert_eq!(
+        state.current_image_url(),
+        Some("https://i.scdn.co/image/cover")
+    );
 
-    state.apply(SpotifyEvent::Paused {
-        track_uri: track_uri.clone(),
-    });
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Paused {
+        now_playing: playing,
+    }));
     assert_eq!(state.view, ViewState::Paused);
-    assert_eq!(state.track_uri.as_deref(), Some(track_uri.as_str()));
+    assert_eq!(
+        state.now_playing().map(|item| item.track.name.as_str()),
+        Some("Night Owl")
+    );
 
-    state.apply(SpotifyEvent::Stopped);
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Idle));
     assert_eq!(state.view, ViewState::Ready);
-    assert_eq!(state.track_uri, None);
+    assert!(state.now_playing().is_none());
+    assert_eq!(state.current_image_url(), None);
 }
 
 #[test]
@@ -111,14 +155,14 @@ fn reauthentication_clears_session_data() {
         name: "Focus".into(),
         uri: "spotify:playlist:focus".into(),
     }]));
-    state.apply(SpotifyEvent::Playing {
-        track_uri: "spotify:track:example".into(),
-    });
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Playing {
+        now_playing: now_playing("Night Owl", &["Ada"]),
+    }));
 
     state.apply(SpotifyEvent::FatalError(AppError::ReauthenticationRequired));
 
     assert_eq!(state.view, ViewState::ReauthRequired);
-    assert_eq!(state.track_uri, None);
+    assert!(state.now_playing().is_none());
     assert_eq!(state.playlists, []);
     assert!(!state.connected());
 }

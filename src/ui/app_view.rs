@@ -1,8 +1,8 @@
-use gpui::{Context, Render, Window, div, prelude::*, px, rgb};
+use gpui::{Context, Render, Window, div, prelude::*, rgb};
 
 use super::{
     app::TinyTune,
-    header, login_view, player_controls, playlist_list,
+    header, login_view, now_playing, player_controls, playlist_list,
     state::ViewState,
     theme::{BACKGROUND, BORDER, ERROR, MUTED, SURFACE, TEXT},
 };
@@ -61,15 +61,6 @@ impl Render for TinyTune {
                             .child(self.ui.status.clone()),
                     )
                     .when(has_playlists, |view| view.child(playlists))
-                    .when_some(self.ui.track_uri.clone(), |view, uri| {
-                        view.child(
-                            div()
-                                .max_w(px(480.))
-                                .text_xs()
-                                .text_color(rgb(MUTED))
-                                .child(uri),
-                        )
-                    })
                     .when(!connected, |view| view.child(login)),
             )
             .child(
@@ -82,7 +73,21 @@ impl Render for TinyTune {
                     .child(memory),
             )
             .when(connected, |view| {
-                view.child(div().w_full().flex().justify_center().child(controls))
+                view.child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .items_center()
+                        .gap_4()
+                        .rounded_xl()
+                        .border_1()
+                        .border_color(rgb(BORDER))
+                        .bg(rgb(SURFACE))
+                        .px_4()
+                        .py_3()
+                        .child(now_playing::render(self))
+                        .child(controls),
+                )
             })
     }
 }

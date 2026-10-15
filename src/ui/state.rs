@@ -1,5 +1,5 @@
 use crate::{
-    domain::{AppError, PlaylistSummary},
+    domain::{AppError, PlaybackState, PlaylistSummary},
     spotify::SpotifyEvent,
 };
 
@@ -21,7 +21,7 @@ pub(super) enum ViewState {
 pub(super) struct AppState {
     pub view: ViewState,
     pub status: String,
-    pub track_uri: Option<String>,
+    pub playback: PlaybackState,
     pub playlists: Vec<PlaylistSummary>,
 }
 
@@ -30,7 +30,7 @@ impl Default for AppState {
         Self {
             view: ViewState::SignedOut,
             status: "Ready to connect".into(),
-            track_uri: None,
+            playback: PlaybackState::Idle,
             playlists: Vec::new(),
         }
     }
@@ -42,6 +42,16 @@ impl AppState {
             self.view,
             ViewState::Ready | ViewState::Loading | ViewState::Playing | ViewState::Paused
         )
+    }
+
+    pub fn now_playing(&self) -> Option<&crate::domain::NowPlaying> {
+        self.playback.now_playing()
+    }
+
+    pub fn current_image_url(&self) -> Option<&str> {
+        self.now_playing()
+            .and_then(|now_playing| now_playing.track.image.as_ref())
+            .map(|image| image.url.as_str())
     }
 
     pub fn apply(&mut self, event: SpotifyEvent) {
@@ -68,25 +78,8 @@ impl AppState {
                 self.playlists = playlists;
                 self.status = format!("{count} playlists ready");
             }
-            SpotifyEvent::Loading => {
-                self.view = ViewState::Loading;
-                self.status = "Loading your music".into();
-            }
-            SpotifyEvent::Playing { track_uri } => {
-                self.view = ViewState::Playing;
-                self.status = "Playing".into();
-                self.track_uri = Some(track_uri);
-            }
-            SpotifyEvent::Paused { track_uri } => {
-                self.view = ViewState::Paused;
-                self.status = "Paused".into();
-                self.track_uri = Some(track_uri);
-            }
-            SpotifyEvent::Stopped => {
-                self.view = ViewState::Ready;
-                self.status = "Stopped".into();
-                self.track_uri = None;
-            }
+            SpotifyEvent::PlaybackChanged(playback) => self.apply_playback(playback),
+            SpotifyEvent::ArtworkReady(_) | SpotifyEvent::ArtworkFailed { .. } => {}
             SpotifyEvent::RecoverableError(error) => self.apply_error(&error, false),
             SpotifyEvent::FatalError(error) => self.apply_error(&error, true),
         }
@@ -101,10 +94,34 @@ impl AppState {
 
         if matches!(error, AppError::ReauthenticationRequired) {
             self.view = ViewState::ReauthRequired;
-            self.track_uri = None;
+            self.playback = PlaybackState::Idle;
             self.playlists.clear();
         } else if fatal {
             self.view = ViewState::Failed;
+        }
+    }
+
+    fn apply_playback(&mut self, playback: PlaybackState) {
+        self.playback = playback;
+        match &self.playback {
+            PlaybackState::Idle => {
+                if self.connected() || self.view == ViewState::Loading {
+                    self.view = ViewState::Ready;
+                }
+                self.status = "Stopped".into();
+            }
+            PlaybackState::Loading { .. } => {
+                self.view = ViewState::Loading;
+                self.status = "Loading your music".into();
+            }
+            PlaybackState::Playing { .. } => {
+                self.view = ViewState::Playing;
+                self.status = "Playing".into();
+            }
+            PlaybackState::Paused { .. } => {
+                self.view = ViewState::Paused;
+                self.status = "Paused".into();
+            }
         }
     }
 }

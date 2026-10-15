@@ -1,45 +1,98 @@
 use librespot::core::spotify_uri::SpotifyUri;
 use librespot::playback::player::PlayerEvent;
 
-use crate::domain::AppError;
+use crate::domain::{AppError, PlaybackState};
 
-use super::{SpotifyEvent, project_player_event};
+use super::{PlaybackProjector, PlayerProjection};
+
+fn track_uri() -> SpotifyUri {
+    SpotifyUri::from_uri("spotify:track:4iV5W9uYEdYUVa79Axb7Rh").expect("valid Spotify URI")
+}
+
+fn playing(position_ms: u32) -> PlayerEvent {
+    PlayerEvent::Playing {
+        play_request_id: 1,
+        track_id: track_uri(),
+        position_ms,
+    }
+}
 
 #[test]
 fn ignores_non_ui_player_events() {
-    assert_eq!(
-        project_player_event(PlayerEvent::VolumeChanged { volume: 42 }),
-        None
-    );
+    let mut playback = PlaybackProjector::default();
+
+    assert!(matches!(
+        playback.apply(PlayerEvent::VolumeChanged { volume: 42 }),
+        PlayerProjection::Ignore
+    ));
 }
 
 #[test]
 fn projects_playing_event_without_leaking_backend_types() {
-    let track_id =
-        SpotifyUri::from_uri("spotify:track:4iV5W9uYEdYUVa79Axb7Rh").expect("valid Spotify URI");
+    let mut playback = PlaybackProjector::default();
+
+    let PlayerProjection::Playback(PlaybackState::Playing { now_playing }) =
+        playback.apply(playing(1_500))
+    else {
+        panic!("playing should publish now-playing state");
+    };
 
     assert_eq!(
-        project_player_event(PlayerEvent::Playing {
-            play_request_id: 1,
-            track_id,
-            position_ms: 0,
-        }),
-        Some(SpotifyEvent::Playing {
-            track_uri: "spotify:track:4iV5W9uYEdYUVa79Axb7Rh".into(),
-        })
+        now_playing.track.spotify_uri.as_deref(),
+        Some("spotify:track:4iV5W9uYEdYUVa79Axb7Rh")
     );
+    assert_eq!(now_playing.position_ms, 1_500);
+    assert_eq!(now_playing.track.name, "");
+}
+
+#[test]
+fn coalesces_repeated_position_updates_for_the_same_track() {
+    let mut playback = PlaybackProjector::default();
+    assert!(matches!(
+        playback.apply(playing(0)),
+        PlayerProjection::Playback(_)
+    ));
+
+    assert!(matches!(
+        playback.apply(PlayerEvent::PositionChanged {
+            play_request_id: 1,
+            track_id: track_uri(),
+            position_ms: 1_000,
+        }),
+        PlayerProjection::Ignore
+    ));
+    assert!(matches!(
+        playback.apply(playing(2_000)),
+        PlayerProjection::Ignore
+    ));
+    assert_eq!(playback.position_ms, 2_000);
 }
 
 #[test]
 fn projects_unavailable_track_as_an_application_error() {
-    let track_id =
-        SpotifyUri::from_uri("spotify:track:4iV5W9uYEdYUVa79Axb7Rh").expect("valid Spotify URI");
+    let mut playback = PlaybackProjector::default();
 
-    assert_eq!(
-        project_player_event(PlayerEvent::Unavailable {
+    assert!(matches!(
+        playback.apply(PlayerEvent::Unavailable {
             play_request_id: 1,
-            track_id,
+            track_id: track_uri(),
         }),
-        Some(SpotifyEvent::RecoverableError(AppError::TrackUnavailable))
-    );
+        PlayerProjection::Error(AppError::TrackUnavailable)
+    ));
+}
+
+#[test]
+fn stopped_clears_now_playing() {
+    let mut playback = PlaybackProjector::default();
+    playback.apply(playing(0));
+
+    assert!(matches!(
+        playback.apply(PlayerEvent::Stopped {
+            play_request_id: 1,
+            track_id: track_uri(),
+        }),
+        PlayerProjection::Playback(PlaybackState::Idle)
+    ));
+    assert_eq!(playback.summary, None);
+    assert_eq!(playback.track_uri, None);
 }

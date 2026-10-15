@@ -14,9 +14,12 @@ Tiny Tune is built in Rust with GPUI and `librespot`. It does not embed Electron
 - read-only list of up to 50 playlists
 - start playlist playback
 - play/pause, previous, and next
+- now playing title, artists, and cover art
 - startup and RSS diagnostics
 
-Session persistence, secure token storage, playlist tracks, artwork, volume, and installers are not implemented yet.
+The player bar shows the current track while audio is playing or paused. Cover art is fetched only for that track, decoded near the display size (128 px), and kept in an LRU whose budget defaults to 8 MB (`TINY_TUNE_IMAGE_CACHE_BUDGET_MB`, maximum 64). A muted placeholder stays in the cover slot while artwork is missing or still loading.
+
+Session persistence, playlist tracks, volume, and installers are not implemented yet.
 
 ## Requirements
 
