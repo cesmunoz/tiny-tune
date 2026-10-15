@@ -121,6 +121,7 @@ pub enum AppError {
     TrackUnavailable,
     CredentialStoreUnavailable,
     BackendUnavailable,
+    PlaybackUnreachable,
     RateLimited { retry_after_seconds: u64 },
     Offline,
     Unexpected,
@@ -136,6 +137,7 @@ impl AppError {
                 "Connected, but the session could not be saved securely".into()
             }
             Self::BackendUnavailable => "Spotify backend is unavailable".into(),
+            Self::PlaybackUnreachable => "Could not reach Spotify playback. Try again.".into(),
             Self::RateLimited {
                 retry_after_seconds,
             } => format!("Spotify is rate limiting requests. Try again in {retry_after_seconds}s"),
@@ -158,6 +160,7 @@ impl AppError {
             Self::TrackUnavailable => "track_unavailable",
             Self::CredentialStoreUnavailable => "credential_store_unavailable",
             Self::BackendUnavailable => "backend_unavailable",
+            Self::PlaybackUnreachable => "playback_unreachable",
             Self::RateLimited { .. } => "rate_limited",
             Self::Offline => "offline",
             Self::Unexpected => "unexpected",

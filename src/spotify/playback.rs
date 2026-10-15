@@ -1,4 +1,6 @@
 use std::{
+    future::Future,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -11,7 +13,7 @@ use async_channel::{Receiver, Sender};
 use librespot::{
     connect::{ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc},
     core::{
-        authentication::Credentials, config::SessionConfig, session::Session,
+        authentication::Credentials, config::SessionConfig, error::ErrorKind, session::Session,
         spotify_uri::SpotifyUri,
     },
     metadata::audio::AudioItem,
@@ -22,7 +24,7 @@ use tracing::warn;
 use secrecy::SecretString;
 
 use crate::{
-    config::SpotifyConfig,
+    config::{ApPortAttempts, SpotifyConfig},
     domain::{
         AppError, NowPlaying, PageCursor, PlaybackState, TrackSummary, is_spotify_context_uri,
         is_spotify_track_uri,
@@ -30,6 +32,7 @@ use crate::{
 };
 
 use super::{
+    access_point::{self, AttemptFailure, ConnectError, PLAYBACK_CONNECT_TIMEOUT},
     artwork::{self, DecodedArtwork},
     audio,
     auth::{authenticate, refresh},
@@ -38,6 +41,8 @@ use super::{
     messages::{ArtworkBytes, SpotifyCommand, SpotifyEvent},
     now_playing::project_audio_item,
 };
+
+type SpircTask = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionStart {
@@ -51,11 +56,11 @@ pub async fn run_session(
     credentials: &dyn CredentialStore,
     start: SessionStart,
 ) -> Result<()> {
-    let session_config = SessionConfig::default();
+    let session_template = SessionConfig::default();
     let Some(signed_in) = sign_in(
         events,
         credentials,
-        SpotifyConfig::from_env(session_config.client_id.clone()),
+        SpotifyConfig::from_env(session_template.client_id.clone()),
         start,
     )
     .await?
@@ -69,23 +74,26 @@ pub async fn run_session(
 
     send(events, SpotifyEvent::Connecting).await;
 
-    let session = Session::new(session_config, None);
-    let audio = audio::initialize(session.clone())?;
-    let mut player_events = audio.events;
-    let spotify_credentials = Credentials::with_access_token(catalog.access_token.clone());
-    let connect_config = ConnectConfig {
-        name: "Tiny Tune".into(),
-        ..ConnectConfig::default()
-    };
-    let (spirc, spirc_task) = Spirc::new(
-        connect_config,
-        session.clone(),
-        spotify_credentials,
-        audio.player,
-        audio.mixer,
+    let attempts = ApPortAttempts::from_setting(catalog.config.ap_port);
+    let connected = match open_playback(
+        &session_template,
+        attempts.as_slice(),
+        &catalog.access_token,
     )
-    .await?;
-    let mut spirc_task = Box::pin(spirc_task);
+    .await
+    {
+        Ok(connected) => connected,
+        Err(error) => {
+            report_connect_failure(events, error).await;
+            return Ok(());
+        }
+    };
+    let OpenedPlayback {
+        spirc,
+        mut task,
+        mut player_events,
+        session,
+    } = connected;
     let artwork_loader = ArtworkLoader::new();
     let mut playback = PlaybackProjector::default();
     let mut playback_publish = PlaybackPublish::default();
@@ -97,7 +105,7 @@ pub async fn run_session(
     if load_playlists(events, credentials, &mut catalog).await == SessionFollowUp::Reauthenticate {
         artwork_loader.cancel();
         spirc.shutdown()?;
-        let _ = tokio::time::timeout(Duration::from_secs(2), &mut spirc_task).await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
         return Ok(());
     }
     if !credentials_persisted {
@@ -114,7 +122,7 @@ pub async fn run_session(
         credentials,
         spirc: &spirc,
         session: &session,
-        spirc_task: &mut spirc_task,
+        spirc_task: &mut task,
         player_events: &mut player_events,
         artwork_loader: &artwork_loader,
         playback: &mut playback,
@@ -189,13 +197,13 @@ async fn sign_in(
     }))
 }
 
-struct PlayerLoop<'a, F> {
+struct PlayerLoop<'a> {
     commands: &'a Receiver<SpotifyCommand>,
     events: &'a Sender<SpotifyEvent>,
     credentials: &'a dyn CredentialStore,
     spirc: &'a Spirc,
     session: &'a Session,
-    spirc_task: &'a mut std::pin::Pin<Box<F>>,
+    spirc_task: &'a mut SpircTask,
     player_events: &'a mut librespot::playback::player::PlayerEventChannel,
     artwork_loader: &'a ArtworkLoader,
     playback: &'a mut PlaybackProjector,
@@ -203,10 +211,7 @@ struct PlayerLoop<'a, F> {
     catalog: &'a mut CatalogSession,
 }
 
-async fn drive_player<F>(player: PlayerLoop<'_, F>) -> Result<()>
-where
-    F: Future<Output = ()>,
-{
+async fn drive_player(player: PlayerLoop<'_>) -> Result<()> {
     loop {
         player.playback_publish.flush(player.events);
         tokio::select! {
@@ -341,16 +346,13 @@ enum SessionExit {
     Shutdown,
 }
 
-async fn handle_command<F>(
+async fn handle_command(
     command: Result<SpotifyCommand, async_channel::RecvError>,
     events: &Sender<SpotifyEvent>,
     spirc: &Spirc,
     session: &Session,
-    spirc_task: &mut std::pin::Pin<Box<F>>,
-) -> Result<Option<SessionExit>>
-where
-    F: Future<Output = ()>,
-{
+    spirc_task: &mut SpircTask,
+) -> Result<Option<SessionExit>> {
     match command {
         Ok(SpotifyCommand::PlayPlaylist {
             uri,
@@ -372,6 +374,7 @@ where
         Ok(
             SpotifyCommand::LoadArtwork { .. }
             | SpotifyCommand::RestoreSession
+            | SpotifyCommand::RetryConnection
             | SpotifyCommand::OpenPlaylist { .. },
         ) => {}
         Ok(SpotifyCommand::Logout) => {
@@ -749,6 +752,100 @@ impl PlaybackProjector {
             position_ms: self.position_ms,
         })
     }
+}
+
+struct OpenedPlayback {
+    spirc: Spirc,
+    task: SpircTask,
+    player_events: librespot::playback::player::PlayerEventChannel,
+    session: Session,
+}
+
+async fn open_playback(
+    template: &SessionConfig,
+    attempts: &[Option<u16>],
+    access_token: &str,
+) -> Result<OpenedPlayback, AppError> {
+    let mut attempt = 0_usize;
+    let connected =
+        access_point::connect_with_fallback(attempts, PLAYBACK_CONNECT_TIMEOUT, |port| {
+            let retry = attempt > 0;
+            attempt += 1;
+            let mut config = template.clone();
+            let access_token = access_token.to_owned();
+            async move {
+                if retry {
+                    warn!(port = ap_port_label(port), "retrying Spotify access point");
+                }
+                config.ap_port = port;
+                start_spirc(config, &access_token).await
+            }
+        })
+        .await;
+
+    match connected {
+        Ok(opened) => Ok(opened),
+        Err(ConnectError::Terminal(error)) => Err(error),
+        Err(ConnectError::Exhausted) => {
+            warn!("spotify playback connect attempts exhausted");
+            Err(AppError::PlaybackUnreachable)
+        }
+    }
+}
+
+async fn start_spirc(
+    config: SessionConfig,
+    access_token: &str,
+) -> Result<OpenedPlayback, AttemptFailure> {
+    let session = Session::new(config, None);
+    let audio = audio::initialize(session.clone()).map_err(|_| {
+        warn!("audio output could not be opened");
+        AttemptFailure::Terminal(AppError::Unexpected)
+    })?;
+    let credentials = Credentials::with_access_token(access_token);
+    let connect_config = ConnectConfig {
+        name: "Tiny Tune".into(),
+        ..ConnectConfig::default()
+    };
+    match Spirc::new(
+        connect_config,
+        session.clone(),
+        credentials,
+        audio.player,
+        audio.mixer,
+    )
+    .await
+    {
+        Ok((spirc, task)) => Ok(OpenedPlayback {
+            spirc,
+            task: Box::pin(task),
+            player_events: audio.events,
+            session,
+        }),
+        Err(error) => Err(classify_connect_error(&error)),
+    }
+}
+
+fn classify_connect_error(error: &librespot::core::error::Error) -> AttemptFailure {
+    match error.kind {
+        ErrorKind::PermissionDenied | ErrorKind::Unauthenticated => {
+            AttemptFailure::Terminal(AppError::ReauthenticationRequired)
+        }
+        _ => AttemptFailure::Retryable,
+    }
+}
+
+fn ap_port_label(port: Option<u16>) -> String {
+    port.map_or_else(|| "default".to_owned(), |port| port.to_string())
+}
+
+async fn report_connect_failure(events: &Sender<SpotifyEvent>, error: AppError) {
+    let event = if matches!(error, AppError::ReauthenticationRequired) {
+        SpotifyEvent::FatalError(error)
+    } else {
+        SpotifyEvent::RecoverableError(error)
+    };
+    send(events, event).await;
 }
 
 async fn send(events: &Sender<SpotifyEvent>, event: SpotifyEvent) {

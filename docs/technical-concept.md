@@ -487,6 +487,7 @@ Prefer native `impl Future` trait methods if they remain clear with the pinned R
 pub struct SpotifyConfig {
     pub client_id: String,
     pub redirect_uri: String,
+    pub ap_port: ApPortSetting,
 }
 
 impl SpotifyConfig {
@@ -498,6 +499,7 @@ Environment variables:
 
 - `TINY_TUNE_SPOTIFY_CLIENT_ID`: optional advanced override; defaults to the client configuration selected by `librespot`.
 - `TINY_TUNE_SPOTIFY_REDIRECT_URI`: optional; defaults to `http://127.0.0.1:8898/login`.
+- `TINY_TUNE_SPOTIFY_AP_PORT`: optional; unset tries librespot's default access-point port and then 443. A numeric port forces that port only.
 
 Tiny Tune accepts `librespot`'s zero-setup authentication model. Client secrets are never accepted by the desktop application. Public documentation must retain the upstream warning that connecting to Spotify through this unofficial implementation may be forbidden and is used at the user's own risk.
 

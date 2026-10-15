@@ -40,9 +40,9 @@ mise install
 mise exec -- cargo run --release
 ```
 
-Tiny Tune uses the client configuration provided by `librespot`, so no Spotify developer setup is required. Advanced users can copy `.env.example` to `.env` to override the client ID or loopback callback.
+Tiny Tune uses the client configuration provided by `librespot`, so no Spotify developer setup is required. Advanced users can copy `.env.example` to `.env` to override the client ID, loopback callback, or access-point port.
 
-Click **Connect & play liked songs**, finish login in the browser, and return to Tiny Tune.
+Click **Connect & play liked songs**, finish login in the browser, and return to Tiny Tune. Playback tries Spotify's default access point, then port 443, and gives each attempt a short timeout. If both fail, the window leaves "Waiting for Spotify…" and shows **Retry**.
 
 ## Quality checks
 

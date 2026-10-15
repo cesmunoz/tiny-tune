@@ -13,6 +13,7 @@ pub struct ArtworkBytes {
 pub enum SpotifyCommand {
     RestoreSession,
     LoginAndPlayLikedSongs,
+    RetryConnection,
     Logout,
     PlayPlaylist {
         uri: String,
