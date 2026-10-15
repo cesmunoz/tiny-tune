@@ -1,6 +1,8 @@
 use crate::{
-    domain::{AppError, PlaybackState, PlaylistSummary},
-    spotify::SpotifyEvent,
+    domain::{
+        AppError, Page, PageCursor, PlaybackState, PlaylistSummary, TrackSummary, merge_track_page,
+    },
+    spotify::{SpotifyCommand, SpotifyEvent},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,11 +20,32 @@ pub(super) enum ViewState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum TrackPagePhase {
+    Loading,
+    Ready,
+    Failed(AppError),
+}
+
+/// Tracks for the one open playlist. Other playlists stay summaries only.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct PlaylistDetail {
+    pub summary: PlaylistSummary,
+    pub generation: u64,
+    pub tracks: Vec<TrackSummary>,
+    pub next: Option<PageCursor>,
+    pub phase: TrackPagePhase,
+    pub pending_cursor: Option<PageCursor>,
+    pub awaiting: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct AppState {
     pub view: ViewState,
     pub status: String,
     pub playback: PlaybackState,
     pub playlists: Vec<PlaylistSummary>,
+    pub selected_playlist: Option<PlaylistDetail>,
+    playlist_generation: u64,
 }
 
 impl Default for AppState {
@@ -32,6 +55,8 @@ impl Default for AppState {
             status: "Ready to connect".into(),
             playback: PlaybackState::Idle,
             playlists: Vec::new(),
+            selected_playlist: None,
+            playlist_generation: 0,
         }
     }
 }
@@ -52,6 +77,66 @@ impl AppState {
         self.now_playing()
             .and_then(|now_playing| now_playing.track.image.as_ref())
             .map(|image| image.url.as_str())
+    }
+
+    pub fn open_playlist(&mut self, playlist: PlaylistSummary) -> SpotifyCommand {
+        self.playlist_generation = self.playlist_generation.wrapping_add(1);
+        let generation = self.playlist_generation;
+        let uri = playlist.uri.clone();
+        self.selected_playlist = Some(PlaylistDetail {
+            summary: playlist,
+            generation,
+            tracks: Vec::new(),
+            next: None,
+            phase: TrackPagePhase::Loading,
+            pending_cursor: None,
+            awaiting: true,
+        });
+        SpotifyCommand::OpenPlaylist {
+            uri,
+            cursor: None,
+            generation,
+        }
+    }
+
+    pub fn close_playlist(&mut self) {
+        self.selected_playlist = None;
+        self.playlist_generation = self.playlist_generation.wrapping_add(1);
+    }
+
+    pub fn load_next_tracks(&mut self) -> Option<SpotifyCommand> {
+        let detail = self.selected_playlist.as_mut()?;
+        if detail.awaiting || !matches!(detail.phase, TrackPagePhase::Ready) {
+            return None;
+        }
+        let cursor = detail.next?;
+        detail.pending_cursor = Some(cursor);
+        detail.awaiting = true;
+        detail.phase = TrackPagePhase::Loading;
+        Some(tracks_command(detail))
+    }
+
+    pub fn retry_tracks(&mut self) -> Option<SpotifyCommand> {
+        let detail = self.selected_playlist.as_mut()?;
+        if detail.awaiting || !matches!(detail.phase, TrackPagePhase::Failed(_)) {
+            return None;
+        }
+        detail.awaiting = true;
+        detail.phase = TrackPagePhase::Loading;
+        Some(tracks_command(detail))
+    }
+
+    pub fn play_track(&self, index: usize) -> Option<SpotifyCommand> {
+        let detail = self.selected_playlist.as_ref()?;
+        let track = detail.tracks.get(index)?;
+        let uri = track.spotify_uri.as_deref()?;
+        if !track.is_playable || !crate::domain::is_spotify_track_uri(uri) {
+            return None;
+        }
+        Some(SpotifyCommand::PlayPlaylist {
+            uri: detail.summary.uri.clone(),
+            start_track_uri: Some(uri.to_owned()),
+        })
     }
 
     pub fn apply(&mut self, event: SpotifyEvent) {
@@ -78,6 +163,18 @@ impl AppState {
                 self.playlists = playlists;
                 self.status = format!("{count} playlists ready");
             }
+            SpotifyEvent::PlaylistTracksLoaded {
+                playlist_uri,
+                generation,
+                request_cursor,
+                tracks,
+            } => self.merge_loaded_tracks(&playlist_uri, generation, request_cursor, tracks),
+            SpotifyEvent::PlaylistTracksFailed {
+                playlist_uri,
+                generation,
+                request_cursor,
+                error,
+            } => self.fail_loaded_tracks(&playlist_uri, generation, request_cursor, error),
             SpotifyEvent::PlaybackChanged(playback) => self.apply_playback(playback),
             SpotifyEvent::ArtworkReady(_) | SpotifyEvent::ArtworkFailed { .. } => {}
             SpotifyEvent::RecoverableError(error) => self.apply_error(&error, false),
@@ -96,9 +193,63 @@ impl AppState {
             self.view = ViewState::ReauthRequired;
             self.playback = PlaybackState::Idle;
             self.playlists.clear();
+            self.selected_playlist = None;
         } else if fatal {
             self.view = ViewState::Failed;
         }
+    }
+
+    fn merge_loaded_tracks(
+        &mut self,
+        playlist_uri: &str,
+        generation: u64,
+        request_cursor: Option<PageCursor>,
+        tracks: Page<TrackSummary>,
+    ) {
+        if !self.accepts_track_response(playlist_uri, generation, request_cursor) {
+            return;
+        }
+        let replace = request_cursor.is_none();
+        let detail = self
+            .selected_playlist
+            .as_mut()
+            .expect("accepted track response has a selected playlist");
+        merge_track_page(&mut detail.tracks, tracks.items, replace);
+        detail.next = tracks.next;
+        detail.phase = TrackPagePhase::Ready;
+        detail.awaiting = false;
+    }
+
+    fn fail_loaded_tracks(
+        &mut self,
+        playlist_uri: &str,
+        generation: u64,
+        request_cursor: Option<PageCursor>,
+        error: AppError,
+    ) {
+        if !self.accepts_track_response(playlist_uri, generation, request_cursor) {
+            return;
+        }
+        let detail = self
+            .selected_playlist
+            .as_mut()
+            .expect("accepted track response has a selected playlist");
+        detail.phase = TrackPagePhase::Failed(error);
+        detail.awaiting = false;
+    }
+
+    fn accepts_track_response(
+        &self,
+        playlist_uri: &str,
+        generation: u64,
+        request_cursor: Option<PageCursor>,
+    ) -> bool {
+        self.selected_playlist.as_ref().is_some_and(|detail| {
+            detail.awaiting
+                && detail.generation == generation
+                && detail.summary.uri == playlist_uri
+                && detail.pending_cursor == request_cursor
+        })
     }
 
     fn apply_playback(&mut self, playback: PlaybackState) {
@@ -123,6 +274,14 @@ impl AppState {
                 self.status = "Paused".into();
             }
         }
+    }
+}
+
+fn tracks_command(detail: &PlaylistDetail) -> SpotifyCommand {
+    SpotifyCommand::OpenPlaylist {
+        uri: detail.summary.uri.clone(),
+        cursor: detail.pending_cursor,
+        generation: detail.generation,
     }
 }
 

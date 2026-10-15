@@ -1,4 +1,4 @@
-use crate::domain::{AppError, PlaybackState, PlaylistSummary};
+use crate::domain::{AppError, Page, PageCursor, PlaybackState, PlaylistSummary, TrackSummary};
 
 /// Display-sized BGRA pixels. The encoded download is not retained.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,11 +14,21 @@ pub enum SpotifyCommand {
     RestoreSession,
     LoginAndPlayLikedSongs,
     Logout,
-    PlayPlaylist { uri: String },
+    PlayPlaylist {
+        uri: String,
+        start_track_uri: Option<String>,
+    },
+    OpenPlaylist {
+        uri: String,
+        cursor: Option<PageCursor>,
+        generation: u64,
+    },
     TogglePlayPause,
     Previous,
     Next,
-    LoadArtwork { url: String },
+    LoadArtwork {
+        url: String,
+    },
     Shutdown,
 }
 
@@ -30,9 +40,23 @@ pub enum SpotifyEvent {
     Connecting,
     Ready,
     PlaylistsLoaded(Vec<PlaylistSummary>),
+    PlaylistTracksLoaded {
+        playlist_uri: String,
+        generation: u64,
+        request_cursor: Option<PageCursor>,
+        tracks: Page<TrackSummary>,
+    },
+    PlaylistTracksFailed {
+        playlist_uri: String,
+        generation: u64,
+        request_cursor: Option<PageCursor>,
+        error: AppError,
+    },
     PlaybackChanged(PlaybackState),
     ArtworkReady(Box<ArtworkBytes>),
-    ArtworkFailed { url: String },
+    ArtworkFailed {
+        url: String,
+    },
     RecoverableError(AppError),
     FatalError(AppError),
 }

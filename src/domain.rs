@@ -4,6 +4,31 @@ pub struct PlaylistSummary {
     pub uri: String,
 }
 
+/// One Web API page. Cursors are opaque outside the Spotify adapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    pub next: Option<PageCursor>,
+}
+
+/// Offset of the next playlist-track page. The UI can pass it back and cannot inspect it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PageCursor {
+    offset: u32,
+}
+
+impl PageCursor {
+    pub const PAGE_SIZE: usize = 50;
+
+    pub(crate) fn from_offset(offset: u32) -> Option<Self> {
+        (offset > 0).then_some(Self { offset })
+    }
+
+    pub(crate) const fn offset(self) -> u32 {
+        self.offset
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TrackId(String);
 
@@ -34,6 +59,19 @@ pub struct TrackSummary {
 }
 
 impl TrackSummary {
+    pub(crate) fn unavailable() -> Self {
+        Self {
+            id: None,
+            spotify_uri: None,
+            name: "Unavailable".into(),
+            artist_names: Vec::new(),
+            album_name: String::new(),
+            duration_ms: 0,
+            image: None,
+            is_playable: false,
+        }
+    }
+
     pub(crate) fn pending(spotify_uri: String) -> Self {
         let id = spotify_uri
             .strip_prefix("spotify:track:")
@@ -83,6 +121,8 @@ pub enum AppError {
     TrackUnavailable,
     CredentialStoreUnavailable,
     BackendUnavailable,
+    RateLimited { retry_after_seconds: u64 },
+    Offline,
     Unexpected,
 }
 
@@ -96,7 +136,85 @@ impl AppError {
                 "Connected, but the session could not be saved securely".into()
             }
             Self::BackendUnavailable => "Spotify backend is unavailable".into(),
+            Self::RateLimited {
+                retry_after_seconds,
+            } => format!("Spotify is rate limiting requests. Try again in {retry_after_seconds}s"),
+            Self::Offline => "Spotify could not be reached. Try again.".into(),
             Self::Unexpected => "Tiny Tune could not complete the Spotify request".into(),
         }
     }
+
+    pub fn tracks_message(&self) -> String {
+        match self {
+            Self::PlaylistUnavailable => "This playlist could not be loaded".into(),
+            other => other.user_message(),
+        }
+    }
+
+    pub(crate) const fn kind(&self) -> &'static str {
+        match self {
+            Self::ReauthenticationRequired => "reauthentication_required",
+            Self::PlaylistUnavailable => "playlist_unavailable",
+            Self::TrackUnavailable => "track_unavailable",
+            Self::CredentialStoreUnavailable => "credential_store_unavailable",
+            Self::BackendUnavailable => "backend_unavailable",
+            Self::RateLimited { .. } => "rate_limited",
+            Self::Offline => "offline",
+            Self::Unexpected => "unexpected",
+        }
+    }
 }
+
+pub fn is_spotify_track_uri(uri: &str) -> bool {
+    spotify_resource_id(uri, "spotify:track:").is_some()
+}
+
+pub fn is_spotify_playlist_uri(uri: &str) -> bool {
+    spotify_resource_id(uri, "spotify:playlist:").is_some()
+}
+
+/// Playback contexts Tiny Tune is willing to hand to the player.
+pub fn is_spotify_context_uri(uri: &str) -> bool {
+    let Some(rest) = uri.strip_prefix("spotify:") else {
+        return false;
+    };
+    (1..=256).contains(&rest.len())
+        && !rest.chars().any(|character| {
+            character.is_whitespace() || matches!(character, '/' | '?' | '#' | '@')
+        })
+}
+
+/// Keeps at most one page of new rows and drops duplicate track URIs.
+pub fn merge_track_page(existing: &mut Vec<TrackSummary>, page: Vec<TrackSummary>, replace: bool) {
+    let page = page.into_iter().take(PageCursor::PAGE_SIZE);
+    if replace {
+        existing.clear();
+    }
+    for track in page {
+        if let Some(uri) = &track.spotify_uri
+            && existing
+                .iter()
+                .any(|item| item.spotify_uri.as_ref() == Some(uri))
+        {
+            continue;
+        }
+        existing.push(track);
+    }
+}
+
+fn spotify_resource_id<'a>(uri: &'a str, prefix: &str) -> Option<&'a str> {
+    let id = uri.strip_prefix(prefix)?;
+    if (1..=64).contains(&id.len())
+        && id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+    {
+        Some(id)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+#[path = "__tests__/library.rs"]
+mod tests;
