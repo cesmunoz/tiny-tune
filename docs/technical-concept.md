@@ -24,7 +24,7 @@ Initial performance targets are directional rather than hard release requirement
 
 ## Context / Current State
 
-The repository began empty, without existing standards, a toolchain, code, or tests. The feasibility alpha now contains a GPUI shell, a bounded UI/backend channel boundary, OAuth wiring, `librespot` playback, a read-only playlist request, tests, CI, and a first performance baseline.
+The repository began empty, without existing standards, a toolchain, code, or tests. The feasibility alpha now contains a GPUI shell, a bounded UI/backend channel boundary, OAuth wiring, `librespot` playback, a read-only playlist list, paginated tracks for the single open playlist, tests, CI, and a first performance baseline. Track pages hold at most 50 items. Stale track responses are dropped with a generation id, and raw Web API JSON is discarded after projection.
 
 Verified technical evidence:
 

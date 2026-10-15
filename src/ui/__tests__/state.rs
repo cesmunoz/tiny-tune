@@ -1,9 +1,10 @@
 use crate::{
     domain::{
-        AppError, ImageRef, NowPlaying, PlaybackState, PlaylistSummary, TrackId, TrackSummary,
+        AppError, ImageRef, NowPlaying, Page, PageCursor, PlaybackState, PlaylistSummary, TrackId,
+        TrackSummary,
     },
-    spotify::SpotifyEvent,
-    ui::state::{AppState, ViewState},
+    spotify::{SpotifyCommand, SpotifyEvent},
+    ui::state::{AppState, TrackPagePhase, ViewState},
 };
 
 fn now_playing(name: &str, artists: &[&str]) -> NowPlaying {
@@ -35,6 +36,7 @@ fn starts_signed_out_without_session_data() {
     assert_eq!(state.playback, PlaybackState::Idle);
     assert!(state.now_playing().is_none());
     assert_eq!(state.playlists, []);
+    assert!(state.selected_playlist.is_none());
     assert!(!state.connected());
 }
 
@@ -164,5 +166,241 @@ fn reauthentication_clears_session_data() {
     assert_eq!(state.view, ViewState::ReauthRequired);
     assert!(state.now_playing().is_none());
     assert_eq!(state.playlists, []);
+    assert!(state.selected_playlist.is_none());
     assert!(!state.connected());
+}
+
+fn playlist(uri: &str) -> PlaylistSummary {
+    PlaylistSummary {
+        name: "Focus".into(),
+        uri: uri.into(),
+    }
+}
+
+fn summary(uri: &str, playable: bool) -> TrackSummary {
+    TrackSummary {
+        id: Some(TrackId::new(uri.trim_start_matches("spotify:track:"))),
+        spotify_uri: Some(uri.into()),
+        name: "Track".into(),
+        artist_names: vec!["Ada".into()],
+        album_name: "Hours".into(),
+        duration_ms: 1_000,
+        image: None,
+        is_playable: playable,
+    }
+}
+
+fn loaded(
+    uri: &str,
+    generation: u64,
+    request_cursor: Option<PageCursor>,
+    tracks: Vec<TrackSummary>,
+    next: Option<PageCursor>,
+) -> SpotifyEvent {
+    SpotifyEvent::PlaylistTracksLoaded {
+        playlist_uri: uri.into(),
+        generation,
+        request_cursor,
+        tracks: Page {
+            items: tracks,
+            next,
+        },
+    }
+}
+
+#[test]
+fn merges_track_pages_for_the_open_playlist_only() {
+    let mut state = AppState::default();
+    let playlist_uri = "spotify:playlist:focus";
+    let open = state.open_playlist(playlist(playlist_uri));
+    assert_eq!(
+        open,
+        SpotifyCommand::OpenPlaylist {
+            uri: playlist_uri.into(),
+            cursor: None,
+            generation: 1,
+        }
+    );
+
+    let first = summary("spotify:track:aaaaaaaaaaaaaaaaaaaaaa", true);
+    let second = summary("spotify:track:bbbbbbbbbbbbbbbbbbbbbb", true);
+    let third = summary("spotify:track:cccccccccccccccccccccc", false);
+    let next = PageCursor::from_offset(2);
+    state.apply(loaded(
+        playlist_uri,
+        1,
+        None,
+        vec![first.clone(), second.clone()],
+        next,
+    ));
+
+    let detail = state.selected_playlist.as_ref().expect("open playlist");
+    assert_eq!(detail.phase, TrackPagePhase::Ready);
+    assert_eq!(detail.tracks.len(), 2);
+    assert!(!detail.awaiting);
+
+    let load_next = state.load_next_tracks().expect("next page");
+    assert_eq!(
+        load_next,
+        SpotifyCommand::OpenPlaylist {
+            uri: playlist_uri.into(),
+            cursor: next,
+            generation: 1,
+        }
+    );
+    assert!(state.load_next_tracks().is_none());
+
+    state.apply(loaded(
+        playlist_uri,
+        1,
+        next,
+        vec![second.clone(), third.clone()],
+        None,
+    ));
+    let detail = state.selected_playlist.as_ref().expect("open playlist");
+    assert_eq!(detail.tracks.len(), 3);
+    assert_eq!(detail.tracks[2].spotify_uri, third.spotify_uri);
+    assert!(detail.next.is_none());
+    assert_eq!(
+        match state.play_track(0).expect("playable") {
+            SpotifyCommand::PlayPlaylist {
+                start_track_uri, ..
+            } => start_track_uri,
+            other => panic!("unexpected command {other:?}"),
+        },
+        first.spotify_uri
+    );
+    assert!(state.play_track(2).is_none());
+
+    state.apply(loaded(
+        playlist_uri,
+        1,
+        next,
+        vec![summary("spotify:track:dddddddddddddddddddddd", true)],
+        None,
+    ));
+    assert_eq!(
+        state.selected_playlist.as_ref().expect("open").tracks.len(),
+        3
+    );
+}
+
+#[test]
+fn discards_stale_playlist_track_responses() {
+    let mut state = AppState::default();
+    let first = "spotify:playlist:one";
+    let second = "spotify:playlist:two";
+    state.open_playlist(playlist(first));
+    state.open_playlist(playlist(second));
+
+    state.apply(loaded(
+        first,
+        1,
+        None,
+        vec![summary("spotify:track:aaaaaaaaaaaaaaaaaaaaaa", true)],
+        None,
+    ));
+    assert_eq!(
+        state
+            .selected_playlist
+            .as_ref()
+            .expect("second playlist")
+            .tracks,
+        []
+    );
+
+    state.apply(loaded(
+        second,
+        2,
+        None,
+        vec![summary("spotify:track:bbbbbbbbbbbbbbbbbbbbbb", true)],
+        None,
+    ));
+    assert_eq!(
+        state
+            .selected_playlist
+            .as_ref()
+            .expect("second playlist")
+            .tracks
+            .len(),
+        1
+    );
+
+    state.close_playlist();
+    state.apply(loaded(
+        second,
+        2,
+        None,
+        vec![summary("spotify:track:cccccccccccccccccccccc", true)],
+        None,
+    ));
+    assert!(state.selected_playlist.is_none());
+}
+
+#[test]
+fn retries_a_failed_track_page_without_dropping_loaded_rows() {
+    let mut state = AppState::default();
+    let playlist_uri = "spotify:playlist:focus";
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Playing {
+        now_playing: now_playing("Night Owl", &["Ada"]),
+    }));
+    state.open_playlist(playlist(playlist_uri));
+    state.apply(SpotifyEvent::PlaylistTracksFailed {
+        playlist_uri: playlist_uri.into(),
+        generation: 1,
+        request_cursor: None,
+        error: AppError::Offline,
+    });
+    assert_eq!(state.view, ViewState::Playing);
+    assert_eq!(state.status, "Playing");
+    assert_eq!(
+        state.selected_playlist.as_ref().expect("open").phase,
+        TrackPagePhase::Failed(AppError::Offline)
+    );
+
+    let retry = state.retry_tracks().expect("retry");
+    assert_eq!(
+        retry,
+        SpotifyCommand::OpenPlaylist {
+            uri: playlist_uri.into(),
+            cursor: None,
+            generation: 1,
+        }
+    );
+
+    let next = PageCursor::from_offset(1);
+    state.apply(loaded(
+        playlist_uri,
+        1,
+        None,
+        vec![summary("spotify:track:aaaaaaaaaaaaaaaaaaaaaa", true)],
+        next,
+    ));
+    state.load_next_tracks().expect("next");
+    state.apply(SpotifyEvent::PlaylistTracksFailed {
+        playlist_uri: playlist_uri.into(),
+        generation: 1,
+        request_cursor: next,
+        error: AppError::RateLimited {
+            retry_after_seconds: 3,
+        },
+    });
+
+    let detail = state.selected_playlist.as_ref().expect("open");
+    assert_eq!(detail.tracks.len(), 1);
+    assert_eq!(
+        detail.phase,
+        TrackPagePhase::Failed(AppError::RateLimited {
+            retry_after_seconds: 3
+        })
+    );
+    let retry_next = state.retry_tracks().expect("retry next");
+    assert_eq!(
+        retry_next,
+        SpotifyCommand::OpenPlaylist {
+            uri: playlist_uri.into(),
+            cursor: next,
+            generation: 1,
+        }
+    );
 }

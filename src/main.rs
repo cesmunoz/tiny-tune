@@ -19,7 +19,7 @@ fn main() {
 
     let started_at = Instant::now();
     application().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(720.), px(520.)), cx);
+        let bounds = Bounds::centered(None, size(px(760.), px(860.)), cx);
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();

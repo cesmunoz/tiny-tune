@@ -2,7 +2,7 @@ use gpui::{Context, Render, Window, div, prelude::*, rgb};
 
 use super::{
     app::TinyTune,
-    header, login_view, now_playing, player_controls, playlist_list,
+    header, login_view, now_playing, player_controls, playlist_list, playlist_tracks,
     state::ViewState,
     theme::{BACKGROUND, BORDER, ERROR, MUTED, SURFACE, TEXT},
 };
@@ -19,10 +19,12 @@ impl Render for TinyTune {
             |value| format!("{value} MB RSS"),
         );
         let has_playlists = !self.ui.playlists.is_empty();
+        let show_tracks = self.ui.selected_playlist.is_some();
         let connected = self.connected();
         let title = title_for(self.ui.view);
 
         let playlists = playlist_list::render(self, cx);
+        let tracks = playlist_tracks::render(self, cx);
         let login = login_view::render(self, cx);
         let controls = player_controls::render(self, cx);
 
@@ -61,6 +63,7 @@ impl Render for TinyTune {
                             .child(self.ui.status.clone()),
                     )
                     .when(has_playlists, |view| view.child(playlists))
+                    .when(show_tracks, |view| view.child(tracks))
                     .when(!connected, |view| view.child(login)),
             )
             .child(

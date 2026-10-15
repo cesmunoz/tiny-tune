@@ -12,14 +12,17 @@ Tiny Tune is built in Rust with GPUI and `librespot`. It does not embed Electron
 - Spotify OAuth in the system browser
 - local playback of Liked Songs
 - read-only list of up to 50 playlists
-- start playlist playback
+- open one playlist and browse its tracks in pages of 50
+- start playback from a playlist or a playable track
 - play/pause, previous, and next
 - now playing title, artists, and cover art
 - startup and RSS diagnostics
 
 The player bar shows the current track while audio is playing or paused. Cover art is fetched only for that track, decoded near the display size (128 px), and kept in an LRU whose budget defaults to 8 MB (`TINY_TUNE_IMAGE_CACHE_BUDGET_MB`, maximum 64). A muted placeholder stays in the cover slot while artwork is missing or still loading.
 
-Session persistence, playlist tracks, volume, and installers are not implemented yet.
+Opening a playlist loads one page of tracks. **Load next page** requests the following page and appends it to that playlist only. Switching playlists drops the previous track list. Unavailable rows stay visible and cannot be played. If Spotify rate-limits the request, the network is unreachable, or the access token needs a refresh, the track list keeps the rows already loaded and offers **Try again**. A rejected refresh asks you to sign in again. Raw Web API JSON is not kept after it is turned into track rows.
+
+Session persistence, volume, and installers are not implemented yet.
 
 ## Requirements
 
