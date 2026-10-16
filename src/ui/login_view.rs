@@ -16,6 +16,7 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
 
     div()
         .id("connect")
+        .self_start()
         .focusable()
         .tab_stop(true)
         .px_6()
