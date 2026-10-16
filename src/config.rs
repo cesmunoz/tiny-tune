@@ -2,15 +2,55 @@ use std::env;
 
 const CLIENT_ID_ENV: &str = "TINY_TUNE_SPOTIFY_CLIENT_ID";
 const REDIRECT_URI_ENV: &str = "TINY_TUNE_SPOTIFY_REDIRECT_URI";
+const AP_PORT_ENV: &str = "TINY_TUNE_SPOTIFY_AP_PORT";
 const IMAGE_CACHE_BUDGET_MB_ENV: &str = "TINY_TUNE_IMAGE_CACHE_BUDGET_MB";
 const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8898/login";
 pub const DEFAULT_IMAGE_CACHE_BUDGET_MB: u16 = 8;
 pub const MAX_IMAGE_CACHE_BUDGET_MB: u16 = 64;
+/// Port Spotify publishes for networks that block the default access-point port.
+pub const FALLBACK_AP_PORT: u16 = 443;
+
+/// How Tiny Tune chooses the Spotify access-point port.
+///
+/// `Automatic` tries librespot's default resolution, then [`FALLBACK_AP_PORT`].
+/// `Fixed` uses one port and does not fall back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApPortSetting {
+    Automatic,
+    Fixed(u16),
+}
+
+/// At most two access-point attempts. The slice length is the attempt count.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApPortAttempts {
+    values: [Option<u16>; 2],
+    len: usize,
+}
+
+impl ApPortAttempts {
+    pub(crate) fn from_setting(setting: ApPortSetting) -> Self {
+        match setting {
+            ApPortSetting::Automatic => Self {
+                values: [None, Some(FALLBACK_AP_PORT)],
+                len: 2,
+            },
+            ApPortSetting::Fixed(port) => Self {
+                values: [Some(port), None],
+                len: 1,
+            },
+        }
+    }
+
+    pub(crate) fn as_slice(&self) -> &[Option<u16>] {
+        &self.values[..self.len]
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpotifyConfig {
     pub client_id: String,
     pub redirect_uri: String,
+    pub ap_port: ApPortSetting,
 }
 
 impl SpotifyConfig {
@@ -24,7 +64,18 @@ impl SpotifyConfig {
         Self {
             client_id,
             redirect_uri,
+            ap_port: resolve_ap_port(env::var(AP_PORT_ENV).ok().as_deref()),
         }
+    }
+}
+
+pub(crate) fn resolve_ap_port(configured: Option<&str>) -> ApPortSetting {
+    let Some(value) = configured.map(str::trim).filter(|value| !value.is_empty()) else {
+        return ApPortSetting::Automatic;
+    };
+    match value.parse::<u16>() {
+        Ok(port) if port > 0 => ApPortSetting::Fixed(port),
+        _ => ApPortSetting::Automatic,
     }
 }
 

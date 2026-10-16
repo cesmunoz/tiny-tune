@@ -1,3 +1,4 @@
+mod access_point;
 mod artwork;
 mod audio;
 mod auth;

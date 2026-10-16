@@ -58,6 +58,17 @@ async fn run_supervisor(
                 )
                 .await;
             }
+            SpotifyCommand::RetryConnection => {
+                let start = match credentials.load_refresh_token() {
+                    Ok(Some(_)) => SessionStart::Stored,
+                    Ok(None) => SessionStart::Interactive,
+                    Err(_) => {
+                        warn!("secure credential storage is unavailable");
+                        SessionStart::Interactive
+                    }
+                };
+                run_and_report(&commands, &events, credentials.as_ref(), start).await;
+            }
             SpotifyCommand::Logout => {
                 let credentials_deleted = credentials.delete_refresh_token().is_ok();
                 let _ = events.send(SpotifyEvent::SignedOut).await;

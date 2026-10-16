@@ -9,7 +9,7 @@ use super::{
 
 impl Render for TinyTune {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let status_color = if self.ui.view == ViewState::Failed {
+        let status_color = if matches!(self.ui.view, ViewState::Failed | ViewState::ConnectFailed) {
             rgb(ERROR)
         } else {
             rgb(MUTED)
@@ -104,6 +104,7 @@ fn title_for(state: ViewState) -> &'static str {
         ViewState::Connecting | ViewState::Loading => "Almost there",
         ViewState::Ready => "Tiny Tune is connected",
         ViewState::ReauthRequired => "Reconnect Spotify",
+        ViewState::ConnectFailed => "Could not connect",
         ViewState::SignedOut | ViewState::Failed => "A smaller Spotify player",
     }
 }

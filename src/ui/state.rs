@@ -17,6 +17,32 @@ pub(super) enum ViewState {
     Playing,
     Paused,
     Failed,
+    ConnectFailed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ConnectButton {
+    Waiting,
+    Retry,
+    SignIn,
+}
+
+impl ConnectButton {
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Waiting => "Waiting for Spotify…",
+            Self::Retry => "Retry",
+            Self::SignIn => "Connect & play liked songs",
+        }
+    }
+
+    pub(super) const fn command(self) -> Option<SpotifyCommand> {
+        match self {
+            Self::Waiting => None,
+            Self::Retry => Some(SpotifyCommand::RetryConnection),
+            Self::SignIn => Some(SpotifyCommand::LoginAndPlayLikedSongs),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,6 +93,22 @@ impl AppState {
             self.view,
             ViewState::Ready | ViewState::Loading | ViewState::Playing | ViewState::Paused
         )
+    }
+
+    pub(super) const fn connect_button(&self) -> ConnectButton {
+        match self.view {
+            ViewState::RestoringSession | ViewState::Authenticating | ViewState::Connecting => {
+                ConnectButton::Waiting
+            }
+            ViewState::ConnectFailed => ConnectButton::Retry,
+            ViewState::SignedOut
+            | ViewState::Ready
+            | ViewState::ReauthRequired
+            | ViewState::Loading
+            | ViewState::Playing
+            | ViewState::Paused
+            | ViewState::Failed => ConnectButton::SignIn,
+        }
     }
 
     pub fn now_playing(&self) -> Option<&crate::domain::NowPlaying> {
@@ -177,13 +219,22 @@ impl AppState {
             } => self.fail_loaded_tracks(&playlist_uri, generation, request_cursor, error),
             SpotifyEvent::PlaybackChanged(playback) => self.apply_playback(playback),
             SpotifyEvent::ArtworkReady(_) | SpotifyEvent::ArtworkFailed { .. } => {}
-            SpotifyEvent::RecoverableError(error) => self.apply_error(&error, false),
+            SpotifyEvent::RecoverableError(error) => self.apply_recoverable(&error),
             SpotifyEvent::FatalError(error) => self.apply_error(&error, true),
         }
     }
 
     pub fn backend_busy(&mut self) {
         self.apply(SpotifyEvent::FatalError(AppError::BackendUnavailable));
+    }
+
+    fn apply_recoverable(&mut self, error: &AppError) {
+        let connect_failed = !self.connected()
+            && matches!(error, AppError::PlaybackUnreachable | AppError::Unexpected);
+        self.apply_error(error, false);
+        if connect_failed {
+            self.view = ViewState::ConnectFailed;
+        }
     }
 
     fn apply_error(&mut self, error: &AppError, fatal: bool) {

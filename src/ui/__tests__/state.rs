@@ -4,7 +4,7 @@ use crate::{
         TrackSummary,
     },
     spotify::{SpotifyCommand, SpotifyEvent},
-    ui::state::{AppState, TrackPagePhase, ViewState},
+    ui::state::{AppState, ConnectButton, TrackPagePhase, ViewState},
 };
 
 fn now_playing(name: &str, artists: &[&str]) -> NowPlaying {
@@ -125,6 +125,60 @@ fn follows_playback_transitions_and_clears_stopped_track() {
     assert_eq!(state.view, ViewState::Ready);
     assert!(state.now_playing().is_none());
     assert_eq!(state.current_image_url(), None);
+}
+
+#[test]
+fn shows_retry_when_playback_connect_times_out() {
+    let mut state = AppState::default();
+
+    state.apply(SpotifyEvent::Authenticating);
+    state.apply(SpotifyEvent::Connecting);
+    assert_eq!(state.connect_button(), ConnectButton::Waiting);
+    assert_eq!(state.connect_button().label(), "Waiting for Spotify…");
+    assert_eq!(state.connect_button().command(), None);
+
+    state.apply(SpotifyEvent::RecoverableError(
+        AppError::PlaybackUnreachable,
+    ));
+
+    assert_eq!(state.view, ViewState::ConnectFailed);
+    assert_eq!(state.status, "Could not reach Spotify playback. Try again.");
+    assert!(!state.connected());
+    assert_eq!(state.connect_button(), ConnectButton::Retry);
+    assert_eq!(state.connect_button().label(), "Retry");
+    assert_eq!(
+        state.connect_button().command(),
+        Some(SpotifyCommand::RetryConnection)
+    );
+
+    state.apply(SpotifyEvent::Connecting);
+    assert_eq!(state.view, ViewState::Connecting);
+    assert_eq!(state.connect_button(), ConnectButton::Waiting);
+}
+
+#[test]
+fn shows_retry_when_playback_setup_fails() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Connecting);
+    state.apply(SpotifyEvent::RecoverableError(AppError::Unexpected));
+
+    assert_eq!(state.view, ViewState::ConnectFailed);
+    assert_eq!(
+        state.status,
+        "Tiny Tune could not complete the Spotify request"
+    );
+    assert_eq!(state.connect_button(), ConnectButton::Retry);
+}
+
+#[test]
+fn keeps_other_recoverable_errors_on_the_current_view() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Connecting);
+    state.apply(SpotifyEvent::RecoverableError(AppError::Offline));
+
+    assert_eq!(state.view, ViewState::Connecting);
+    assert_eq!(state.status, "Spotify could not be reached. Try again.");
+    assert_eq!(state.connect_button(), ConnectButton::Waiting);
 }
 
 #[test]
