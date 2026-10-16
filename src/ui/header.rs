@@ -1,12 +1,13 @@
 use gpui::{div, prelude::*, rgb};
 
-use super::theme::{ACCENT, MUTED};
+use super::theme::ACCENT;
 
-pub fn render() -> impl IntoElement {
+pub fn render(trailing: impl IntoElement) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .justify_between()
+        .gap_3()
         .child(
             div()
                 .flex()
@@ -20,10 +21,5 @@ pub fn render() -> impl IntoElement {
                         .child("Tiny Tune"),
                 ),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(rgb(MUTED))
-                .child("RUST · GPUI · NO ELECTRON"),
-        )
+        .child(trailing)
 }
