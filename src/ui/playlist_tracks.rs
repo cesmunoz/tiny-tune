@@ -31,9 +31,13 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
     });
     let entity = cx.entity();
 
-    div().when_some(pane, |parent, pane| {
-        parent.child(track_pane(pane, entity, cx))
-    })
+    div()
+        .w_full()
+        .flex_1()
+        .min_h(px(0.))
+        .when_some(pane, |parent, pane| {
+            parent.child(track_pane(pane, entity, cx))
+        })
 }
 
 fn track_pane(
@@ -50,7 +54,8 @@ fn track_pane(
     div()
         .id("playlist-tracks")
         .w_full()
-        .max_w(px(640.))
+        .flex_1()
+        .min_h(px(0.))
         .flex()
         .flex_col()
         .gap_3()
@@ -58,7 +63,7 @@ fn track_pane(
         .child(phase_message(&phase, track_count))
         .when(track_count > 0, |parent| {
             parent.child(
-                div().w_full().h(px(280.)).child(
+                div().w_full().flex_1().min_h(px(0.)).child(
                     uniform_list("playlist-track-rows", track_count, move |range, _, app| {
                         render_track_rows(&entity, range, app)
                     })

@@ -47,3 +47,22 @@ fn play_pause_is_the_only_primary_action() {
     assert!(!PlayerAction::Next.is_primary());
     assert!(!PlayerAction::Logout.is_primary());
 }
+
+#[test]
+fn transport_stays_in_the_player_bar_and_logout_moves_to_the_shell() {
+    assert_eq!(
+        super::transport_actions(false).map(PlayerAction::id),
+        ["previous", "play-pause", "next"]
+    );
+    assert_eq!(
+        super::transport_actions(true).map(PlayerAction::id),
+        ["previous", "play-pause", "next"]
+    );
+    assert!(
+        super::transport_actions(false)
+            .into_iter()
+            .all(|action| action != PlayerAction::Logout)
+    );
+    assert_eq!(super::shell_logout(false), None);
+    assert_eq!(super::shell_logout(true), Some(PlayerAction::Logout));
+}

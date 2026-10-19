@@ -8,11 +8,6 @@ use super::{
 };
 
 pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    let list_height = if app.ui.selected_playlist.is_some() {
-        150.
-    } else {
-        220.
-    };
     let selected_uri = app
         .ui
         .selected_playlist
@@ -22,8 +17,8 @@ pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + 
     div()
         .id("playlists")
         .w_full()
-        .max_w(px(640.))
-        .max_h(px(list_height))
+        .flex_1()
+        .min_h(px(0.))
         .overflow_y_scroll()
         .flex()
         .flex_col()

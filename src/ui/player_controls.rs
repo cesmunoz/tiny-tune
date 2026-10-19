@@ -9,7 +9,7 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PlayerAction {
+pub(super) enum PlayerAction {
     Previous,
     TogglePlayPause { playing: bool },
     Next,
@@ -64,58 +64,73 @@ impl PlayerAction {
     }
 }
 
-pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    let actions = [
+pub(super) const fn transport_actions(playing: bool) -> [PlayerAction; 3] {
+    [
         PlayerAction::Previous,
-        PlayerAction::TogglePlayPause {
-            playing: app.ui.view == ViewState::Playing,
-        },
+        PlayerAction::TogglePlayPause { playing },
         PlayerAction::Next,
-        PlayerAction::Logout,
-    ];
+    ]
+}
+
+pub(super) const fn shell_logout(connected: bool) -> Option<PlayerAction> {
+    if connected {
+        Some(PlayerAction::Logout)
+    } else {
+        None
+    }
+}
+
+pub(super) fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+    let actions = transport_actions(app.ui.view == ViewState::Playing);
 
     div()
         .flex()
         .items_center()
         .gap_3()
-        .children(actions.into_iter().map(|action| {
-            let command = action.command();
-            let primary = action.is_primary();
-            let icon_color = if primary { ON_ACCENT } else { TEXT };
+        .children(actions.into_iter().map(|action| action_button(action, cx)))
+}
 
-            div()
-                .id(action.id())
-                .focusable()
-                .tab_stop(true)
-                .role(Role::Button)
-                .aria_label(action.label())
-                .rounded_full()
-                .cursor_pointer()
-                .when(primary, |button| {
-                    button
-                        .px_5()
-                        .py_3()
-                        .bg(rgb(ACCENT))
-                        .hover(|style| style.bg(rgb(ACCENT_HOVER)))
-                })
-                .when(!primary, |button| {
-                    button
-                        .px_4()
-                        .py_2()
-                        .border_1()
-                        .border_color(rgb(BORDER))
-                        .hover(|style| style.bg(rgb(BORDER)))
-                })
-                .on_click(cx.listener(move |app, _, _, cx| {
-                    app.send(command.clone(), cx);
-                }))
-                .child(
-                    svg()
-                        .data(action.icon())
-                        .size_5()
-                        .text_color(rgb(icon_color)),
-                )
+pub(super) fn logout(cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+    action_button(PlayerAction::Logout, cx)
+}
+
+fn action_button(action: PlayerAction, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+    let command = action.command();
+    let primary = action.is_primary();
+    let icon_color = if primary { ON_ACCENT } else { TEXT };
+
+    div()
+        .id(action.id())
+        .focusable()
+        .tab_stop(true)
+        .role(Role::Button)
+        .aria_label(action.label())
+        .rounded_full()
+        .cursor_pointer()
+        .when(primary, |button| {
+            button
+                .px_5()
+                .py_3()
+                .bg(rgb(ACCENT))
+                .hover(|style| style.bg(rgb(ACCENT_HOVER)))
+        })
+        .when(!primary, |button| {
+            button
+                .px_4()
+                .py_2()
+                .border_1()
+                .border_color(rgb(BORDER))
+                .hover(|style| style.bg(rgb(BORDER)))
+        })
+        .on_click(cx.listener(move |app, _, _, cx| {
+            app.send(command.clone(), cx);
         }))
+        .child(
+            svg()
+                .data(action.icon())
+                .size_5()
+                .text_color(rgb(icon_color)),
+        )
 }
 
 #[cfg(test)]

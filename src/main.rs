@@ -11,7 +11,7 @@ use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
 use gpui_platform::application;
 use tracing_subscriber::EnvFilter;
 
-use ui::TinyTune;
+use ui::{TinyTune, shell_size};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -19,7 +19,8 @@ fn main() {
 
     let started_at = Instant::now();
     application().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(760.), px(860.)), cx);
+        let chrome = shell_size();
+        let bounds = Bounds::centered(None, size(px(chrome.width), px(chrome.height)), cx);
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
@@ -30,6 +31,7 @@ fn main() {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_min_size: Some(size(px(chrome.min_width), px(chrome.min_height))),
                 ..WindowOptions::default()
             },
             |_, cx| cx.new(|cx| TinyTune::new(cx, started_at)),
