@@ -101,6 +101,8 @@ pub async fn run_session(
         let _ = tokio::time::timeout(Duration::from_secs(2), &mut spirc_task).await;
         return Ok(());
     }
+    let mut playlists_retry = PlaylistRetry::default();
+    playlists_retry.schedule(playlists_follow_up, events).await;
     if !credentials_persisted {
         send(
             events,
@@ -121,7 +123,7 @@ pub async fn run_session(
         playback: &mut playback,
         playback_publish: &mut playback_publish,
         catalog: &mut catalog,
-        playlists_retry: PlaylistRetry::after(playlists_follow_up),
+        playlists_retry,
     })
     .await
 }
@@ -257,7 +259,7 @@ where
                     let _ = tokio::time::timeout(Duration::from_secs(2), player.spirc_task.as_mut()).await;
                     return Ok(());
                 }
-                player.playlists_retry.schedule(follow_up);
+                player.playlists_retry.schedule(follow_up, player.events).await;
             }
             event = player.player_events.recv() => {
                 let Some(event) = event else {
@@ -479,16 +481,22 @@ struct PlaylistRetry {
 }
 
 impl PlaylistRetry {
-    fn after(follow_up: SessionFollowUp) -> Self {
-        let mut retry = Self::default();
-        retry.schedule(follow_up);
-        retry
-    }
-
-    fn schedule(&mut self, follow_up: SessionFollowUp) {
+    async fn schedule(&mut self, follow_up: SessionFollowUp, events: &Sender<SpotifyEvent>) {
         let delay = next_playlist_retry(follow_up, self.attempts);
         self.attempts = self.attempts.saturating_add(u8::from(delay.is_some()));
         self.sleep = delay.map(|delay| Box::pin(tokio::time::sleep(delay)));
+        if delay.is_some() {
+            send(
+                events,
+                SpotifyEvent::PlaylistsRetryScheduled {
+                    attempt: self.attempts,
+                    max_attempts: MAX_PLAYLIST_RETRIES,
+                },
+            )
+            .await;
+        } else if matches!(follow_up, SessionFollowUp::RetryAfter(_)) {
+            send(events, SpotifyEvent::PlaylistsRetriesExhausted).await;
+        }
     }
 
     async fn wait(&mut self) {
@@ -548,7 +556,6 @@ async fn load_playlists(
             },
         ) => {
             warn!(kind = error.kind(), "spotify catalog request failed");
-            send(events, SpotifyEvent::PlaylistsFailed(error)).await;
             SessionFollowUp::RetryAfter(Duration::from_secs(retry_after_seconds))
         }
         Err(error) => {

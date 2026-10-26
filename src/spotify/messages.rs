@@ -40,6 +40,11 @@ pub enum SpotifyEvent {
     Connecting,
     Ready,
     PlaylistsLoading,
+    PlaylistsRetryScheduled {
+        attempt: u8,
+        max_attempts: u8,
+    },
+    PlaylistsRetriesExhausted,
     PlaylistsLoaded(Vec<PlaylistSummary>),
     PlaylistsFailed(AppError),
     PlaylistTracksLoaded {

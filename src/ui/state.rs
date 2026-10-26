@@ -23,6 +23,8 @@ pub(super) enum ViewState {
 pub(super) enum LibraryPhase {
     NotLoaded,
     Loading,
+    Retrying,
+    RetriesExhausted,
     Ready,
     Failed,
 }
@@ -76,6 +78,12 @@ impl AppState {
         match self.library_phase {
             LibraryPhase::NotLoaded => "Connect to see your playlists",
             LibraryPhase::Loading => "Loading your playlists…",
+            LibraryPhase::Retrying => {
+                "Spotify is limiting playlist requests. Retrying automatically…"
+            }
+            LibraryPhase::RetriesExhausted => {
+                "Automatic retries stopped. Playlists are unavailable; try reopening Tiny Tune later."
+            }
             LibraryPhase::Ready => "No playlists in your library",
             LibraryPhase::Failed => "Your playlists could not be loaded",
         }
@@ -183,7 +191,23 @@ impl AppState {
                 self.view = ViewState::Ready;
                 self.status = "Connected as Tiny Tune".into();
             }
-            SpotifyEvent::PlaylistsLoading => self.library_phase = LibraryPhase::Loading,
+            SpotifyEvent::PlaylistsLoading => {
+                self.library_phase = LibraryPhase::Loading;
+                self.status = "Loading your playlists…".into();
+            }
+            SpotifyEvent::PlaylistsRetryScheduled {
+                attempt,
+                max_attempts,
+            } => {
+                self.library_phase = LibraryPhase::Retrying;
+                self.status = format!(
+                    "Spotify is limiting playlist requests. Retrying automatically… ({attempt}/{max_attempts})"
+                );
+            }
+            SpotifyEvent::PlaylistsRetriesExhausted => {
+                self.library_phase = LibraryPhase::RetriesExhausted;
+                self.status = self.library_placeholder().into();
+            }
             SpotifyEvent::PlaylistsLoaded(playlists) => {
                 let count = playlists.len();
                 self.playlists = playlists;

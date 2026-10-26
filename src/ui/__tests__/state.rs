@@ -485,3 +485,49 @@ fn titles_the_stage_with_the_open_playlist() {
     state.close_playlist();
     assert_eq!(state.selected_playlist_name(), None);
 }
+
+#[test]
+fn playlist_retry_status_distinguishes_waiting_request_and_exhaustion() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Ready);
+    state.apply(SpotifyEvent::PlaylistsLoading);
+    for attempt in 1..=5 {
+        state.apply(SpotifyEvent::PlaylistsRetryScheduled {
+            attempt,
+            max_attempts: 5,
+        });
+        assert!(state.connected());
+        assert_eq!(
+            state.status,
+            format!("Spotify is limiting playlist requests. Retrying automatically… ({attempt}/5)")
+        );
+        state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Playing {
+            now_playing: now_playing("Track", &["Artist"]),
+        }));
+        assert_eq!(
+            state.library_placeholder(),
+            "Spotify is limiting playlist requests. Retrying automatically…"
+        );
+        state.apply(SpotifyEvent::PlaylistsLoading);
+        assert_eq!(state.status, "Loading your playlists…");
+        assert_eq!(state.library_placeholder(), "Loading your playlists…");
+    }
+    state.apply(SpotifyEvent::PlaylistsRetriesExhausted);
+    let terminal =
+        "Automatic retries stopped. Playlists are unavailable; try reopening Tiny Tune later.";
+    assert_eq!(state.status, terminal);
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Idle));
+    assert!(state.connected());
+    assert_eq!(state.library_placeholder(), terminal);
+    state.apply(SpotifyEvent::PlaylistsLoading);
+    state.apply(SpotifyEvent::PlaylistsLoaded(vec![]));
+    assert_eq!(state.library_placeholder(), "No playlists in your library");
+    state.apply(SpotifyEvent::PlaylistsRetryScheduled {
+        attempt: 1,
+        max_attempts: 5,
+    });
+    state.apply(SpotifyEvent::FatalError(AppError::ReauthenticationRequired));
+    assert_eq!(state.library_placeholder(), "Connect to see your playlists");
+    state.apply(SpotifyEvent::SignedOut);
+    assert_eq!(state, AppState::default());
+}
