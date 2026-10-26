@@ -3,10 +3,11 @@ use std::{sync::Arc, time::Instant};
 use gpui::{Context, RenderImage};
 use tracing::{debug, info, warn};
 
+#[cfg(debug_assertions)]
+use crate::diagnostics::process_memory_mb;
 use crate::{
     artwork_cache::{ArtworkCache, ArtworkInsert},
     config::AppConfig,
-    diagnostics::process_memory_mb,
     spotify::{self, ArtworkBytes, SpotifyCommand, SpotifyEvent, SpotifyHandle},
 };
 
@@ -15,7 +16,9 @@ use super::{artwork::render_artwork, state::AppState};
 pub struct TinyTune {
     pub(super) backend: SpotifyHandle,
     pub(super) ui: AppState,
+    #[cfg(debug_assertions)]
     pub(super) startup_ms: u128,
+    #[cfg(debug_assertions)]
     pub(super) memory_mb: Option<u64>,
     artwork: ArtworkCache<Arc<RenderImage>>,
     visible_artwork: Option<(String, Arc<RenderImage>)>,
@@ -32,7 +35,10 @@ impl TinyTune {
                 if this
                     .update(cx, |app, cx| {
                         app.handle_backend_event(event);
-                        app.memory_mb = process_memory_mb();
+                        #[cfg(debug_assertions)]
+                        {
+                            app.memory_mb = process_memory_mb();
+                        }
                         cx.notify();
                     })
                     .is_err()
@@ -44,14 +50,15 @@ impl TinyTune {
         .detach();
 
         let startup_ms = started_at.elapsed().as_millis();
-        let memory_mb = process_memory_mb();
-        info!(startup_ms, ?memory_mb, "Tiny Tune window created");
+        info!(startup_ms, "Tiny Tune window created");
 
         Self {
             backend,
             ui: AppState::default(),
+            #[cfg(debug_assertions)]
             startup_ms,
-            memory_mb,
+            #[cfg(debug_assertions)]
+            memory_mb: process_memory_mb(),
             artwork: ArtworkCache::new(AppConfig::from_env().image_cache_budget_bytes()),
             visible_artwork: None,
             artwork_inflight: None,

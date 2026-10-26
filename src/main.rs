@@ -1,5 +1,6 @@
 mod artwork_cache;
 mod config;
+#[cfg(debug_assertions)]
 mod diagnostics;
 mod domain;
 mod spotify;

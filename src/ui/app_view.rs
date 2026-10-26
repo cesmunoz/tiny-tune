@@ -15,10 +15,6 @@ impl Render for TinyTune {
         } else {
             rgb(MUTED)
         };
-        let memory = self.memory_mb.map_or_else(
-            || "RSS unavailable".into(),
-            |value| format!("{value} MB RSS"),
-        );
         let has_playlists = !self.ui.playlists.is_empty();
         let show_tracks = self.ui.selected_playlist.is_some();
         let connected = self.connected();
@@ -31,6 +27,10 @@ impl Render for TinyTune {
         let controls = player_controls::render(self, cx);
         let logout = player_controls::shell_logout(connected).map(|_| player_controls::logout(cx));
         let status = self.ui.status.clone();
+        #[cfg(debug_assertions)]
+        let dev_banner = Some(dev_banner(self));
+        #[cfg(not(debug_assertions))]
+        let dev_banner: Option<gpui::Div> = None;
 
         div()
             .size_full()
@@ -38,6 +38,7 @@ impl Render for TinyTune {
             .flex_col()
             .bg(rgb(BACKGROUND))
             .text_color(rgb(TEXT))
+            .children(dev_banner)
             .child(shell_header(div().children(logout)))
             .child(
                 div()
@@ -56,7 +57,6 @@ impl Render for TinyTune {
                         login,
                     )),
             )
-            .child(diagnostics_row(self.startup_ms, memory))
             .when(connected, |view| view.child(player_bar(self, controls)))
     }
 }
@@ -136,15 +136,37 @@ fn stage(
         .when(!connected, |stage| stage.child(login))
 }
 
-fn diagnostics_row(startup_ms: u128, memory: String) -> impl IntoElement {
+/// Resource readout for debug builds only; release builds compile it out.
+#[cfg(debug_assertions)]
+fn dev_banner(app: &TinyTune) -> gpui::Div {
+    use super::theme::{ACCENT, ON_ACCENT};
+
+    let memory = app.memory_mb.map_or_else(
+        || "RSS unavailable".into(),
+        |value| format!("{value} MB RSS"),
+    );
     div()
         .flex()
-        .justify_between()
+        .items_center()
+        .gap_2()
         .px(px(MAIN_PADDING_X))
-        .py_2()
+        .py_1()
+        .border_b_1()
+        .border_color(rgb(BORDER))
+        .bg(rgb(SURFACE))
         .text_xs()
         .text_color(rgb(MUTED))
-        .child(format!("Window ready in {startup_ms} ms"))
+        .child(
+            div()
+                .px_1()
+                .rounded_sm()
+                .bg(rgb(ACCENT))
+                .text_color(rgb(ON_ACCENT))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child("DEV"),
+        )
+        .child(format!("Window ready in {} ms", app.startup_ms))
+        .child(div().flex_1())
         .child(memory)
 }
 

@@ -44,6 +44,15 @@ Tiny Tune uses the client configuration provided by `librespot`, so no Spotify d
 
 Click **Connect & play liked songs**, finish login in the browser, and return to Tiny Tune.
 
+Debug builds show a small `DEV` banner with startup time and memory use; release builds omit it.
+
+To build a macOS `.app` (or Linux `.deb`) with the Tiny Tune icon:
+
+```sh
+cargo install cargo-bundle
+cargo bundle --release
+```
+
 ## Quality checks
 
 Run the complete local quality gate with Cargo only:
