@@ -22,7 +22,10 @@ impl Render for TinyTune {
         let has_playlists = !self.ui.playlists.is_empty();
         let show_tracks = self.ui.selected_playlist.is_some();
         let connected = self.connected();
-        let title = title_for(self.ui.view);
+        let title: gpui::SharedString = self.ui.selected_playlist_name().map_or_else(
+            || title_for(self.ui.view).into(),
+            |name| name.to_owned().into(),
+        );
         let sidebar_width = px(chrome::shell_size().sidebar_width);
 
         let playlists = playlist_list::render(self, cx);
@@ -45,7 +48,12 @@ impl Render for TinyTune {
                     .min_h(px(0.))
                     .flex()
                     .overflow_hidden()
-                    .child(library_column(sidebar_width, has_playlists, playlists))
+                    .child(library_column(
+                        sidebar_width,
+                        has_playlists,
+                        connected,
+                        playlists,
+                    ))
                     .child(stage(
                         title,
                         status_color,
@@ -73,6 +81,7 @@ fn shell_header(logout: impl IntoElement) -> impl IntoElement {
 fn library_column(
     sidebar_width: gpui::Pixels,
     has_playlists: bool,
+    connected: bool,
     playlists: impl IntoElement,
 ) -> impl IntoElement {
     div()
@@ -95,17 +104,16 @@ fn library_column(
         )
         .when(has_playlists, |sidebar| sidebar.child(playlists))
         .when(!has_playlists, |sidebar| {
-            sidebar.child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(MUTED))
-                    .child("Connect to see your playlists"),
-            )
+            sidebar.child(div().text_sm().text_color(rgb(MUTED)).child(if connected {
+                "Loading your playlists…"
+            } else {
+                "Connect to see your playlists"
+            }))
         })
 }
 
 fn stage(
-    title: &'static str,
+    title: gpui::SharedString,
     status_color: gpui::Rgba,
     status: String,
     show_tracks: bool,
@@ -129,6 +137,7 @@ fn stage(
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .whitespace_nowrap()
                 .overflow_hidden()
+                .text_ellipsis()
                 .child(title),
         )
         .child(div().text_sm().text_color(status_color).child(status))

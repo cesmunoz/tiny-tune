@@ -73,6 +73,12 @@ impl AppState {
         self.playback.now_playing()
     }
 
+    pub fn selected_playlist_name(&self) -> Option<&str> {
+        self.selected_playlist
+            .as_ref()
+            .map(|detail| detail.summary.name.as_str())
+    }
+
     pub fn current_image_url(&self) -> Option<&str> {
         self.now_playing()
             .and_then(|now_playing| now_playing.track.image.as_ref())

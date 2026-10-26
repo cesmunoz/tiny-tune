@@ -404,3 +404,15 @@ fn retries_a_failed_track_page_without_dropping_loaded_rows() {
         }
     );
 }
+
+#[test]
+fn titles_the_stage_with_the_open_playlist() {
+    let mut state = AppState::default();
+    assert_eq!(state.selected_playlist_name(), None);
+
+    let _ = state.open_playlist(playlist("spotify:playlist:focus"));
+    assert_eq!(state.selected_playlist_name(), Some("Focus"));
+
+    state.close_playlist();
+    assert_eq!(state.selected_playlist_name(), None);
+}

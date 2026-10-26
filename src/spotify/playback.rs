@@ -94,7 +94,8 @@ pub async fn run_session(
         play_liked_songs(&spirc, &session)?;
     }
     send(events, SpotifyEvent::Ready).await;
-    if load_playlists(events, credentials, &mut catalog).await == SessionFollowUp::Reauthenticate {
+    let playlists_follow_up = load_playlists(events, credentials, &mut catalog).await;
+    if playlists_follow_up == SessionFollowUp::Reauthenticate {
         artwork_loader.cancel();
         spirc.shutdown()?;
         let _ = tokio::time::timeout(Duration::from_secs(2), &mut spirc_task).await;
@@ -120,6 +121,7 @@ pub async fn run_session(
         playback: &mut playback,
         playback_publish: &mut playback_publish,
         catalog: &mut catalog,
+        playlists_retry: PlaylistRetry::after(playlists_follow_up),
     })
     .await
 }
@@ -201,9 +203,10 @@ struct PlayerLoop<'a, F> {
     playback: &'a mut PlaybackProjector,
     playback_publish: &'a mut PlaybackPublish,
     catalog: &'a mut CatalogSession,
+    playlists_retry: PlaylistRetry,
 }
 
-async fn drive_player<F>(player: PlayerLoop<'_, F>) -> Result<()>
+async fn drive_player<F>(mut player: PlayerLoop<'_, F>) -> Result<()>
 where
     F: Future<Output = ()>,
 {
@@ -245,6 +248,16 @@ where
                     }
                     return Ok(());
                 }
+            }
+            () = player.playlists_retry.wait() => {
+                let follow_up = load_playlists(player.events, player.credentials, player.catalog).await;
+                if follow_up == SessionFollowUp::Reauthenticate {
+                    player.artwork_loader.cancel();
+                    player.spirc.shutdown()?;
+                    let _ = tokio::time::timeout(Duration::from_secs(2), player.spirc_task.as_mut()).await;
+                    return Ok(());
+                }
+                player.playlists_retry.schedule(follow_up);
             }
             event = player.player_events.recv() => {
                 let Some(event) = event else {
@@ -453,6 +466,44 @@ enum StartPlayback {
 enum SessionFollowUp {
     Continue,
     Reauthenticate,
+    RetryAfter(Duration),
+}
+
+const MAX_PLAYLIST_RETRIES: u8 = 5;
+
+/// Re-requests the library after Spotify rate limits it, a bounded number of times.
+#[derive(Default)]
+struct PlaylistRetry {
+    sleep: Option<std::pin::Pin<Box<tokio::time::Sleep>>>,
+    attempts: u8,
+}
+
+impl PlaylistRetry {
+    fn after(follow_up: SessionFollowUp) -> Self {
+        let mut retry = Self::default();
+        retry.schedule(follow_up);
+        retry
+    }
+
+    fn schedule(&mut self, follow_up: SessionFollowUp) {
+        let delay = next_playlist_retry(follow_up, self.attempts);
+        self.attempts = self.attempts.saturating_add(u8::from(delay.is_some()));
+        self.sleep = delay.map(|delay| Box::pin(tokio::time::sleep(delay)));
+    }
+
+    async fn wait(&mut self) {
+        match self.sleep.as_mut() {
+            Some(sleep) => sleep.as_mut().await,
+            None => std::future::pending().await,
+        }
+    }
+}
+
+fn next_playlist_retry(follow_up: SessionFollowUp, attempts: u8) -> Option<Duration> {
+    match follow_up {
+        SessionFollowUp::RetryAfter(delay) if attempts < MAX_PLAYLIST_RETRIES => Some(delay),
+        _ => None,
+    }
 }
 
 struct CatalogSession {
@@ -489,6 +540,15 @@ async fn load_playlists(
             )
             .await;
             SessionFollowUp::Reauthenticate
+        }
+        Err(
+            error @ AppError::RateLimited {
+                retry_after_seconds,
+            },
+        ) => {
+            warn!(kind = error.kind(), "spotify catalog request failed");
+            send(events, SpotifyEvent::RecoverableError(error)).await;
+            SessionFollowUp::RetryAfter(Duration::from_secs(retry_after_seconds))
         }
         Err(error) => {
             warn!(kind = error.kind(), "spotify catalog request failed");
