@@ -518,6 +518,7 @@ async fn load_playlists(
     credentials: &dyn CredentialStore,
     catalog: &mut CatalogSession,
 ) -> SessionFollowUp {
+    send(events, SpotifyEvent::PlaylistsLoading).await;
     match catalog_call(catalog, credentials, |http, token| {
         let http = http.clone();
         let token = token.to_owned();
@@ -547,12 +548,12 @@ async fn load_playlists(
             },
         ) => {
             warn!(kind = error.kind(), "spotify catalog request failed");
-            send(events, SpotifyEvent::RecoverableError(error)).await;
+            send(events, SpotifyEvent::PlaylistsFailed(error)).await;
             SessionFollowUp::RetryAfter(Duration::from_secs(retry_after_seconds))
         }
         Err(error) => {
             warn!(kind = error.kind(), "spotify catalog request failed");
-            send(events, SpotifyEvent::RecoverableError(error)).await;
+            send(events, SpotifyEvent::PlaylistsFailed(error)).await;
             SessionFollowUp::Continue
         }
     }

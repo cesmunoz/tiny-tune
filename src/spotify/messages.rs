@@ -39,7 +39,9 @@ pub enum SpotifyEvent {
     Authenticating,
     Connecting,
     Ready,
+    PlaylistsLoading,
     PlaylistsLoaded(Vec<PlaylistSummary>),
+    PlaylistsFailed(AppError),
     PlaylistTracksLoaded {
         playlist_uri: String,
         generation: u64,

@@ -51,7 +51,7 @@ impl Render for TinyTune {
                     .child(library_column(
                         sidebar_width,
                         has_playlists,
-                        connected,
+                        self.ui.library_placeholder(),
                         playlists,
                     ))
                     .child(stage(
@@ -81,7 +81,7 @@ fn shell_header(logout: impl IntoElement) -> impl IntoElement {
 fn library_column(
     sidebar_width: gpui::Pixels,
     has_playlists: bool,
-    connected: bool,
+    placeholder: &'static str,
     playlists: impl IntoElement,
 ) -> impl IntoElement {
     div()
@@ -104,11 +104,7 @@ fn library_column(
         )
         .when(has_playlists, |sidebar| sidebar.child(playlists))
         .when(!has_playlists, |sidebar| {
-            sidebar.child(div().text_sm().text_color(rgb(MUTED)).child(if connected {
-                "Loading your playlists…"
-            } else {
-                "Connect to see your playlists"
-            }))
+            sidebar.child(div().text_sm().text_color(rgb(MUTED)).child(placeholder))
         })
 }
 

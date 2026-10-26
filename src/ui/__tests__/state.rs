@@ -85,6 +85,75 @@ fn stores_playlists_without_changing_the_ready_view() {
 }
 
 #[test]
+fn empty_library_finishes_loading_even_while_playback_changes() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Ready);
+    state.apply(SpotifyEvent::PlaylistsLoading);
+    assert_eq!(state.library_placeholder(), "Loading your playlists…");
+
+    state.apply(SpotifyEvent::PlaylistsLoaded(vec![]));
+    state.apply(SpotifyEvent::PlaybackChanged(PlaybackState::Playing {
+        now_playing: now_playing("Track", &["Artist"]),
+    }));
+    assert!(state.connected());
+    assert_eq!(state.library_placeholder(), "No playlists in your library");
+
+    state.apply(SpotifyEvent::SignedOut);
+    assert_eq!(state.library_placeholder(), "Connect to see your playlists");
+}
+
+#[test]
+fn catalog_failures_end_loading_and_only_a_new_request_restarts_it() {
+    for error in [
+        AppError::PlaylistUnavailable,
+        AppError::Offline,
+        AppError::RateLimited {
+            retry_after_seconds: 3,
+        },
+    ] {
+        let mut state = AppState::default();
+        state.apply(SpotifyEvent::Ready);
+        state.apply(SpotifyEvent::PlaylistsLoading);
+        state.apply(SpotifyEvent::PlaylistsFailed(error.clone()));
+        assert_eq!(state.status, error.user_message());
+        assert_eq!(
+            state.library_placeholder(),
+            "Your playlists could not be loaded"
+        );
+
+        state.apply(SpotifyEvent::RecoverableError(AppError::TrackUnavailable));
+        assert_eq!(
+            state.library_placeholder(),
+            "Your playlists could not be loaded"
+        );
+
+        state.apply(SpotifyEvent::PlaylistsLoading);
+        assert_eq!(state.library_placeholder(), "Loading your playlists…");
+        state.apply(SpotifyEvent::PlaylistsLoaded(vec![]));
+        assert_eq!(state.library_placeholder(), "No playlists in your library");
+    }
+}
+
+#[test]
+fn unrelated_errors_do_not_end_a_library_request() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Ready);
+    state.apply(SpotifyEvent::PlaylistsLoading);
+    state.apply(SpotifyEvent::RecoverableError(
+        AppError::CredentialStoreUnavailable,
+    ));
+    assert_eq!(state.library_placeholder(), "Loading your playlists…");
+
+    state.apply(SpotifyEvent::FatalError(AppError::BackendUnavailable));
+    assert_eq!(
+        state.library_placeholder(),
+        "Your playlists could not be loaded"
+    );
+    state.apply(SpotifyEvent::FatalError(AppError::ReauthenticationRequired));
+    assert_eq!(state.library_placeholder(), "Connect to see your playlists");
+}
+
+#[test]
 fn follows_playback_transitions_and_clears_stopped_track() {
     let mut state = AppState::default();
     let playing = now_playing("Night Owl", &["Ada", "Bea"]);
