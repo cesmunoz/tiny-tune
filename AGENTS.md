@@ -29,6 +29,10 @@
 - Playback uses `librespot`'s default client configuration. `TINY_TUNE_SPOTIFY_CLIENT_ID` is an optional advanced override.
 - Preserve the clear unofficial-integration and Premium-only warning in public documentation.
 
+## Contributions
+
+- Write all pull request and issue titles and descriptions in English.
+
 ## Required checks
 
 Run before considering work complete:
