@@ -22,7 +22,7 @@ The player bar shows the current track while audio is playing or paused. Cover a
 
 Opening a playlist loads one page of tracks. **Load next page** requests the following page and appends it to that playlist only. Switching playlists drops the previous track list. Unavailable rows stay visible and cannot be played. If Spotify rate-limits the request, the network is unreachable, or the access token needs a refresh, the track list keeps the rows already loaded and offers **Try again**. A rejected refresh asks you to sign in again. Raw Web API JSON is not kept after it is turned into track rows.
 
-Session persistence, volume, and installers are not implemented yet.
+Session persistence and installers are not implemented yet.
 
 ## Requirements
 
