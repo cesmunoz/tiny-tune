@@ -450,3 +450,44 @@ fn sign_out_and_reauthentication_forget_the_volume() {
     state.apply(SpotifyEvent::SignedOut);
     assert_eq!(state, AppState::default());
 }
+
+#[test]
+fn fatal_session_failure_requires_new_volume_confirmation_after_reconnect() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Ready);
+    state.apply(SpotifyEvent::VolumeChanged { percent: 70 });
+
+    state.apply(SpotifyEvent::FatalError(AppError::BackendUnavailable));
+    assert_eq!(state.view, ViewState::Failed);
+    assert_eq!(state.volume, None);
+    assert_eq!(state.nudge_volume(10), None);
+
+    state.apply(SpotifyEvent::Connecting);
+    state.apply(SpotifyEvent::Ready);
+    assert_eq!(state.volume, None);
+    assert_eq!(state.nudge_volume(10), None);
+
+    state.apply(SpotifyEvent::VolumeChanged { percent: 30 });
+    assert_eq!(state.volume, Some(30));
+    assert_eq!(
+        state.nudge_volume(10),
+        Some(SpotifyCommand::SetVolume { percent: 40 })
+    );
+}
+
+#[test]
+fn recoverable_errors_preserve_confirmed_session_volume() {
+    let mut state = AppState::default();
+    state.apply(SpotifyEvent::Ready);
+    state.apply(SpotifyEvent::VolumeChanged { percent: 70 });
+
+    state.apply(SpotifyEvent::RecoverableError(
+        AppError::PlaylistUnavailable,
+    ));
+
+    assert_eq!(state.volume, Some(70));
+    assert_eq!(
+        state.nudge_volume(10),
+        Some(SpotifyCommand::SetVolume { percent: 80 })
+    );
+}

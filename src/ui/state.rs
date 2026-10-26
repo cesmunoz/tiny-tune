@@ -212,6 +212,7 @@ impl AppState {
             self.selected_playlist = None;
         } else if fatal {
             self.view = ViewState::Failed;
+            self.volume = None;
         }
     }
 
