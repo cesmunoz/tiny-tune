@@ -20,6 +20,14 @@ pub(super) enum ViewState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum LibraryPhase {
+    NotLoaded,
+    Loading,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum TrackPagePhase {
     Loading,
     Ready,
@@ -44,6 +52,7 @@ pub(super) struct AppState {
     pub status: String,
     pub playback: PlaybackState,
     pub playlists: Vec<PlaylistSummary>,
+    pub library_phase: LibraryPhase,
     pub selected_playlist: Option<PlaylistDetail>,
     playlist_generation: u64,
 }
@@ -55,6 +64,7 @@ impl Default for AppState {
             status: "Ready to connect".into(),
             playback: PlaybackState::Idle,
             playlists: Vec::new(),
+            library_phase: LibraryPhase::NotLoaded,
             selected_playlist: None,
             playlist_generation: 0,
         }
@@ -62,6 +72,15 @@ impl Default for AppState {
 }
 
 impl AppState {
+    pub fn library_placeholder(&self) -> &'static str {
+        match self.library_phase {
+            LibraryPhase::NotLoaded => "Connect to see your playlists",
+            LibraryPhase::Loading => "Loading your playlists…",
+            LibraryPhase::Ready => "No playlists in your library",
+            LibraryPhase::Failed => "Your playlists could not be loaded",
+        }
+    }
+
     pub fn connected(&self) -> bool {
         matches!(
             self.view,
@@ -71,6 +90,12 @@ impl AppState {
 
     pub fn now_playing(&self) -> Option<&crate::domain::NowPlaying> {
         self.playback.now_playing()
+    }
+
+    pub fn selected_playlist_name(&self) -> Option<&str> {
+        self.selected_playlist
+            .as_ref()
+            .map(|detail| detail.summary.name.as_str())
     }
 
     pub fn current_image_url(&self) -> Option<&str> {
@@ -158,10 +183,16 @@ impl AppState {
                 self.view = ViewState::Ready;
                 self.status = "Connected as Tiny Tune".into();
             }
+            SpotifyEvent::PlaylistsLoading => self.library_phase = LibraryPhase::Loading,
             SpotifyEvent::PlaylistsLoaded(playlists) => {
                 let count = playlists.len();
                 self.playlists = playlists;
+                self.library_phase = LibraryPhase::Ready;
                 self.status = format!("{count} playlists ready");
+            }
+            SpotifyEvent::PlaylistsFailed(error) => {
+                self.library_phase = LibraryPhase::Failed;
+                self.apply_error(&error, false);
             }
             SpotifyEvent::PlaylistTracksLoaded {
                 playlist_uri,
@@ -193,9 +224,11 @@ impl AppState {
             self.view = ViewState::ReauthRequired;
             self.playback = PlaybackState::Idle;
             self.playlists.clear();
+            self.library_phase = LibraryPhase::NotLoaded;
             self.selected_playlist = None;
         } else if fatal {
             self.view = ViewState::Failed;
+            self.library_phase = LibraryPhase::Failed;
         }
     }
 

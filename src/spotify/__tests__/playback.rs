@@ -1,9 +1,13 @@
+use std::time::Duration;
+
 use librespot::core::spotify_uri::SpotifyUri;
 use librespot::playback::player::PlayerEvent;
 
 use crate::domain::{AppError, PlaybackState};
 
-use super::{PlaybackProjector, PlayerProjection};
+use super::{
+    MAX_PLAYLIST_RETRIES, PlaybackProjector, PlayerProjection, SessionFollowUp, next_playlist_retry,
+};
 
 fn track_uri() -> SpotifyUri {
     SpotifyUri::from_uri("spotify:track:4iV5W9uYEdYUVa79Axb7Rh").expect("valid Spotify URI")
@@ -95,4 +99,25 @@ fn stopped_clears_now_playing() {
     ));
     assert_eq!(playback.summary, None);
     assert_eq!(playback.track_uri, None);
+}
+
+#[test]
+fn retries_rate_limited_playlists_a_bounded_number_of_times() {
+    let delay = Duration::from_secs(51);
+    let rate_limited = SessionFollowUp::RetryAfter(delay);
+
+    assert_eq!(next_playlist_retry(rate_limited, 0), Some(delay));
+    assert_eq!(
+        next_playlist_retry(rate_limited, MAX_PLAYLIST_RETRIES - 1),
+        Some(delay)
+    );
+    assert_eq!(
+        next_playlist_retry(rate_limited, MAX_PLAYLIST_RETRIES),
+        None
+    );
+    assert_eq!(next_playlist_retry(SessionFollowUp::Continue, 0), None);
+    assert_eq!(
+        next_playlist_retry(SessionFollowUp::Reauthenticate, 0),
+        None
+    );
 }
