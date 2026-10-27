@@ -255,6 +255,9 @@ where
                     PlayerProjection::Playback(state) => {
                         player.playback_publish.push(player.events, state);
                     }
+                    PlayerProjection::Volume(percent) => {
+                        send(player.events, SpotifyEvent::VolumeChanged { percent }).await;
+                    }
                     PlayerProjection::Error(error) => {
                         send(player.events, SpotifyEvent::RecoverableError(error)).await;
                     }
@@ -368,6 +371,7 @@ where
         Ok(SpotifyCommand::TogglePlayPause) => spirc.play_pause()?,
         Ok(SpotifyCommand::Previous) => spirc.prev()?,
         Ok(SpotifyCommand::Next) => spirc.next()?,
+        Ok(SpotifyCommand::SetVolume { percent }) => spirc.set_volume(volume_level(percent))?,
         Ok(SpotifyCommand::LoginAndPlayLikedSongs) => play_liked_songs(spirc, session)?,
         Ok(
             SpotifyCommand::LoadArtwork { .. }
@@ -605,6 +609,7 @@ enum PlaybackPhase {
 
 enum PlayerProjection {
     Playback(PlaybackState),
+    Volume(u8),
     Error(AppError),
     Ignore,
 }
@@ -674,6 +679,9 @@ impl PlaybackProjector {
                 PlayerProjection::Ignore
             }
             PlayerEvent::Unavailable { .. } => PlayerProjection::Error(AppError::TrackUnavailable),
+            PlayerEvent::VolumeChanged { volume } => {
+                PlayerProjection::Volume(volume_percent(volume))
+            }
             _ => PlayerProjection::Ignore,
         }
     }
@@ -749,6 +757,17 @@ impl PlaybackProjector {
             position_ms: self.position_ms,
         })
     }
+}
+
+/// Maps librespot's 0..=`u16::MAX` volume onto the 0..=100 percent shown in the UI.
+fn volume_percent(volume: u16) -> u8 {
+    let percent = (u32::from(volume) * 100 + u32::from(u16::MAX) / 2) / u32::from(u16::MAX);
+    u8::try_from(percent).unwrap_or(100)
+}
+
+fn volume_level(percent: u8) -> u16 {
+    let level = u32::from(percent.min(100)) * u32::from(u16::MAX) / 100;
+    u16::try_from(level).unwrap_or(u16::MAX)
 }
 
 async fn send(events: &Sender<SpotifyEvent>, event: SpotifyEvent) {

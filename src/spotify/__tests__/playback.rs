@@ -3,7 +3,7 @@ use librespot::playback::player::PlayerEvent;
 
 use crate::domain::{AppError, PlaybackState};
 
-use super::{PlaybackProjector, PlayerProjection};
+use super::{PlaybackProjector, PlayerProjection, volume_level, volume_percent};
 
 fn track_uri() -> SpotifyUri {
     SpotifyUri::from_uri("spotify:track:4iV5W9uYEdYUVa79Axb7Rh").expect("valid Spotify URI")
@@ -22,9 +22,31 @@ fn ignores_non_ui_player_events() {
     let mut playback = PlaybackProjector::default();
 
     assert!(matches!(
-        playback.apply(PlayerEvent::VolumeChanged { volume: 42 }),
+        playback.apply(PlayerEvent::PlayRequestIdChanged { play_request_id: 7 }),
         PlayerProjection::Ignore
     ));
+}
+
+#[test]
+fn projects_volume_changes_as_percent() {
+    let mut playback = PlaybackProjector::default();
+
+    for (volume, percent) in [(0, 0), (u16::MAX / 2, 50), (u16::MAX, 100)] {
+        assert!(matches!(
+            playback.apply(PlayerEvent::VolumeChanged { volume }),
+            PlayerProjection::Volume(projected) if projected == percent
+        ));
+    }
+}
+
+#[test]
+fn volume_percent_round_trips_through_librespot_levels() {
+    for percent in 0..=100 {
+        assert_eq!(volume_percent(volume_level(percent)), percent);
+    }
+    assert_eq!(volume_level(0), 0);
+    assert_eq!(volume_level(100), u16::MAX);
+    assert_eq!(volume_level(250), u16::MAX);
 }
 
 #[test]

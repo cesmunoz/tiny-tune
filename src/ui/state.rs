@@ -43,6 +43,8 @@ pub(super) struct AppState {
     pub view: ViewState,
     pub status: String,
     pub playback: PlaybackState,
+    /// Player volume in percent, known once the player reports it.
+    pub volume: Option<u8>,
     pub playlists: Vec<PlaylistSummary>,
     pub selected_playlist: Option<PlaylistDetail>,
     playlist_generation: u64,
@@ -54,6 +56,7 @@ impl Default for AppState {
             view: ViewState::SignedOut,
             status: "Ready to connect".into(),
             playback: PlaybackState::Idle,
+            volume: None,
             playlists: Vec::new(),
             selected_playlist: None,
             playlist_generation: 0,
@@ -139,6 +142,17 @@ impl AppState {
         })
     }
 
+    /// Command to move the volume by `delta` percent. The shown value only
+    /// changes once the player confirms it, so ignored commands cannot drift.
+    pub fn nudge_volume(&self, delta: i8) -> Option<SpotifyCommand> {
+        let current = self.volume?;
+        let target = current.saturating_add_signed(delta).min(100);
+        if target == current {
+            return None;
+        }
+        Some(SpotifyCommand::SetVolume { percent: target })
+    }
+
     pub fn apply(&mut self, event: SpotifyEvent) {
         match event {
             SpotifyEvent::RestoringSession => {
@@ -176,6 +190,7 @@ impl AppState {
                 error,
             } => self.fail_loaded_tracks(&playlist_uri, generation, request_cursor, error),
             SpotifyEvent::PlaybackChanged(playback) => self.apply_playback(playback),
+            SpotifyEvent::VolumeChanged { percent } => self.volume = Some(percent.min(100)),
             SpotifyEvent::ArtworkReady(_) | SpotifyEvent::ArtworkFailed { .. } => {}
             SpotifyEvent::RecoverableError(error) => self.apply_error(&error, false),
             SpotifyEvent::FatalError(error) => self.apply_error(&error, true),
@@ -192,10 +207,12 @@ impl AppState {
         if matches!(error, AppError::ReauthenticationRequired) {
             self.view = ViewState::ReauthRequired;
             self.playback = PlaybackState::Idle;
+            self.volume = None;
             self.playlists.clear();
             self.selected_playlist = None;
         } else if fatal {
             self.view = ViewState::Failed;
+            self.volume = None;
         }
     }
 
