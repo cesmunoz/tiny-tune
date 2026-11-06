@@ -1,11 +1,14 @@
-use gpui::{Context, Role, div, prelude::*, px, rgb, svg};
+use rune::{Cursor, El, Icon, el, icon, row};
 
 use crate::spotify::SpotifyCommand;
 
 use super::{
     app::TinyTune,
+    icons,
     state::{AppState, ViewState},
-    theme::{ACCENT, ACCENT_HOVER, BORDER, MUTED, ON_ACCENT, TEXT},
+    theme::{
+        ACCENT, ACCENT_HOVER, BORDER, MUTED, ON_ACCENT, REGULAR, ROUND, TEXT, TEXT_XS, label, rgb,
+    },
 };
 
 const VOLUME_STEP: i8 = 10;
@@ -45,19 +48,15 @@ impl PlayerAction {
         }
     }
 
-    const fn icon(self) -> &'static [u8] {
+    fn icon(self) -> &'static Icon {
         match self {
-            Self::Previous => include_bytes!("../../assets/icons/skip-back.svg"),
-            Self::TogglePlayPause { playing: true } => {
-                include_bytes!("../../assets/icons/pause.svg")
-            }
-            Self::TogglePlayPause { playing: false } => {
-                include_bytes!("../../assets/icons/play.svg")
-            }
-            Self::Next => include_bytes!("../../assets/icons/skip-forward.svg"),
-            Self::VolumeDown => include_bytes!("../../assets/icons/volume-1.svg"),
-            Self::VolumeUp => include_bytes!("../../assets/icons/volume-2.svg"),
-            Self::Logout => include_bytes!("../../assets/icons/log-out.svg"),
+            Self::Previous => &icons::SKIP_BACK,
+            Self::TogglePlayPause { playing: true } => &icons::PAUSE,
+            Self::TogglePlayPause { playing: false } => &icons::PLAY,
+            Self::Next => &icons::SKIP_FORWARD,
+            Self::VolumeDown => &icons::VOLUME_1,
+            Self::VolumeUp => &icons::VOLUME_2,
+            Self::Logout => &icons::LOG_OUT,
         }
     }
 
@@ -97,98 +96,88 @@ pub(super) const fn shell_logout(connected: bool) -> Option<PlayerAction> {
     }
 }
 
-pub(super) fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+pub(super) fn render(app: &TinyTune) -> El {
     let actions = transport_actions(app.ui.view == ViewState::Playing);
 
-    let volume = app.ui.volume.map(|percent| volume(percent, cx));
-
-    div()
-        .flex()
+    row()
+        .key("player-controls")
         .items_center()
-        .gap_6()
+        .gap(24.)
         .child(
-            div()
-                .flex()
+            row()
                 .items_center()
-                .gap_3()
-                .children(actions.into_iter().map(|action| action_button(action, cx))),
+                .gap(12.)
+                .children(actions.into_iter().map(action_button)),
         )
-        .children(volume)
+        .children(app.ui.volume.map(volume))
 }
 
-fn volume(percent: u8, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+fn volume(percent: u8) -> El {
     let filled = VOLUME_BAR_PX * f32::from(percent) / 100.;
 
-    div()
-        .id("volume")
-        .flex()
+    row()
+        .key("volume")
         .items_center()
-        .gap_1()
-        .child(action_button(PlayerAction::VolumeDown, cx))
+        .gap(4.)
+        .child(action_button(PlayerAction::VolumeDown))
         .child(
-            div()
-                .w(px(VOLUME_BAR_PX))
-                .h(px(4.))
-                .rounded_full()
-                .bg(rgb(BORDER))
-                .child(div().w(px(filled)).h_full().rounded_full().bg(rgb(ACCENT))),
+            row()
+                .key("volume-bar")
+                .role("progressbar")
+                .label("Volume")
+                .range_value(f64::from(percent), 0., 100.)
+                .w(VOLUME_BAR_PX)
+                .h(4.)
+                .radius(ROUND)
+                .fill(rgb(BORDER))
+                .child(el().w(filled).h_full().radius(ROUND).fill(rgb(ACCENT))),
         )
-        .child(action_button(PlayerAction::VolumeUp, cx))
+        .child(action_button(PlayerAction::VolumeUp))
         .child(
-            div()
-                .w(px(36.))
-                .text_xs()
-                .text_color(rgb(MUTED))
-                .child(format!("{percent}%")),
+            row()
+                .w(36.)
+                .child(label(format!("{percent}%"), TEXT_XS, REGULAR, MUTED)),
         )
 }
 
-pub(super) fn logout(cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    action_button(PlayerAction::Logout, cx)
+pub(super) fn logout() -> El {
+    action_button(PlayerAction::Logout)
 }
 
-fn action_button(action: PlayerAction, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+fn action_button(action: PlayerAction) -> El {
     let primary = action.is_primary();
     let quiet = action.is_quiet();
     let icon_color = if primary { ON_ACCENT } else { TEXT };
 
-    div()
-        .id(action.id())
-        .focusable()
-        .tab_stop(true)
-        .role(Role::Button)
-        .aria_label(action.label())
-        .rounded_full()
-        .cursor_pointer()
-        .when(primary, |button| {
-            button
-                .px_5()
-                .py_3()
-                .bg(rgb(ACCENT))
-                .hover(|style| style.bg(rgb(ACCENT_HOVER)))
-        })
-        .when(quiet, |button| {
-            button.p_2().hover(|style| style.bg(rgb(BORDER)))
-        })
-        .when(!primary && !quiet, |button| {
-            button
-                .px_4()
-                .py_2()
-                .border_1()
-                .border_color(rgb(BORDER))
-                .hover(|style| style.bg(rgb(BORDER)))
-        })
-        .on_click(cx.listener(move |app, _, _, cx| {
+    let button = row()
+        .key(action.id())
+        .role("button")
+        .label(action.label())
+        .focusable(true)
+        .radius(ROUND)
+        .cursor(Cursor::Pointer)
+        .on_press(move |app: &mut TinyTune| {
             if let Some(command) = action.command(&app.ui) {
-                app.send(command, cx);
+                app.send(command);
             }
-        }))
-        .child(
-            svg()
-                .data(action.icon())
-                .size_5()
-                .text_color(rgb(icon_color)),
-        )
+        })
+        .child(icon(action.icon(), 20.).color(rgb(icon_color)));
+
+    if primary {
+        button
+            .px(20.)
+            .py(12.)
+            .fill(rgb(ACCENT))
+            .hover(rgb(ACCENT_HOVER))
+    } else if quiet {
+        button.padding(8.).hover(rgb(BORDER))
+    } else {
+        button
+            .px(16.)
+            .py(8.)
+            .border(1., rgb(BORDER))
+            .hover(rgb(BORDER))
+    }
 }
 
 #[cfg(test)]

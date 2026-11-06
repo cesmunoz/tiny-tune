@@ -1,6 +1,6 @@
-use gpui::{
-    App, Context, Entity, ListSizingBehavior, Window, div, prelude::*, px, rgb, uniform_list,
-};
+use std::borrow::Cow;
+
+use rune::{Cursor, El, GrowthSpec, ScrollSpec, col, edge, row};
 
 use crate::{
     domain::{AppError, TrackSummary, is_spotify_track_uri},
@@ -10,185 +10,150 @@ use crate::{
 use super::{
     app::TinyTune,
     state::TrackPagePhase,
-    theme::{ACCENT, ACCENT_HOVER, BORDER, ERROR, MUTED, ON_ACCENT, TEXT},
+    theme::{
+        ACCENT, ACCENT_HOVER, BOLD, BORDER, ERROR, MUTED, ON_ACCENT, REGULAR, ROUND, SEMIBOLD,
+        TEXT, TEXT_SM, TEXT_XS, label, rgb,
+    },
 };
 
-struct TrackPane {
-    name: String,
-    uri: String,
-    track_count: usize,
-    has_next: bool,
-    phase: TrackPagePhase,
-}
+/// Height of one track row, including the gap below it.
+const TRACK_ROW_PX: f32 = 56.;
 
-pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    let pane = app.ui.selected_playlist.as_ref().map(|detail| TrackPane {
-        name: detail.summary.name.clone(),
-        uri: detail.summary.uri.clone(),
-        track_count: detail.tracks.len(),
-        has_next: detail.next.is_some(),
-        phase: detail.phase.clone(),
-    });
-    let entity = cx.entity();
-
-    div()
-        .w_full()
-        .flex_1()
-        .min_h(px(0.))
-        .when_some(pane, |parent, pane| {
-            parent.child(track_pane(pane, entity, cx))
-        })
-}
-
-fn track_pane(
-    pane: TrackPane,
-    entity: Entity<TinyTune>,
-    cx: &mut Context<TinyTune>,
-) -> impl IntoElement + use<> {
-    let track_count = pane.track_count;
-    let phase = pane.phase.clone();
-    let has_next = pane.has_next;
+pub fn render(app: &TinyTune) -> El {
+    let Some(detail) = app.ui.selected_playlist.as_ref() else {
+        return col();
+    };
+    let track_count = detail.tracks.len();
+    let has_next = detail.next.is_some();
+    let phase = &detail.phase;
     let loading = matches!(phase, TrackPagePhase::Loading);
     let failed = matches!(phase, TrackPagePhase::Failed(_));
 
-    div()
-        .id("playlist-tracks")
+    let mut pane = col()
+        .key("playlist-tracks")
         .w_full()
-        .flex_1()
-        .min_h(px(0.))
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(pane_toolbar(pane, cx))
-        .child(phase_message(&phase, track_count))
-        .when(track_count > 0, |parent| {
-            parent.child(
-                div().w_full().flex_1().min_h(px(0.)).child(
-                    uniform_list("playlist-track-rows", track_count, move |range, _, app| {
-                        render_track_rows(&entity, range, app)
-                    })
-                    .w_full()
-                    .h_full()
-                    .with_sizing_behavior(ListSizingBehavior::Infer),
+        .grow(1.)
+        .min_h(0.)
+        .gap(12.)
+        .child(pane_toolbar(
+            &detail.summary.name,
+            &detail.summary.uri,
+            track_count,
+            has_next,
+        ))
+        .children(phase_message(phase, track_count));
+
+    if track_count > 0 {
+        pane = pane.child(
+            col()
+                .key("playlist-track-scroll")
+                .w_full()
+                .grow(1.)
+                .min_h(0.)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(
+                    col()
+                        .key("playlist-track-rows")
+                        .w_full()
+                        .growth(GrowthSpec {
+                            spring: rune::GROWTH,
+                            edge: edge::NO_MASK,
+                        })
+                        .virtual_rows(
+                            track_count,
+                            TRACK_ROW_PX,
+                            |_: &TinyTune, index| Cow::Owned(format!("track-{index}")),
+                            track_row,
+                        ),
                 ),
-            )
-        })
-        .when(!loading && !failed && track_count == 0, |parent| {
-            parent.child(muted_line("This playlist has no tracks"))
-        })
-        .when(
-            has_next && matches!(phase, TrackPagePhase::Ready),
-            |parent| {
-                parent.child(text_button(
-                    "playlist-next-page",
-                    "Load next page",
-                    false,
-                    cx.listener(|app, _, _, cx| {
-                        if let Some(command) = app.ui.load_next_tracks() {
-                            app.send(command, cx);
-                        }
-                    }),
-                ))
+        );
+    }
+    if !loading && !failed && track_count == 0 {
+        pane = pane.child(muted_line("This playlist has no tracks"));
+    }
+    if has_next && matches!(phase, TrackPagePhase::Ready) {
+        pane = pane.child(text_button(
+            "playlist-next-page",
+            "Load next page",
+            false,
+            |app: &mut TinyTune| {
+                if let Some(command) = app.ui.load_next_tracks() {
+                    app.send(command);
+                }
             },
-        )
-        .when(failed, |parent| {
-            parent.child(text_button(
-                "playlist-retry",
-                "Try again",
-                false,
-                cx.listener(|app, _, _, cx| {
-                    if let Some(command) = app.ui.retry_tracks() {
-                        app.send(command, cx);
-                    }
-                }),
-            ))
-        })
+        ));
+    }
+    if failed {
+        pane = pane.child(text_button(
+            "playlist-retry",
+            "Try again",
+            false,
+            |app: &mut TinyTune| {
+                if let Some(command) = app.ui.retry_tracks() {
+                    app.send(command);
+                }
+            },
+        ));
+    }
+    pane
 }
 
-fn pane_toolbar(pane: TrackPane, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    let playlist_uri = pane.uri.clone();
-    div()
+fn pane_toolbar(name: &str, uri: &str, track_count: usize, has_next: bool) -> El {
+    let playlist_uri = uri.to_owned();
+    row()
+        .key("playlist-toolbar")
         .w_full()
-        .flex()
         .items_center()
         .justify_between()
-        .gap_3()
+        .gap(12.)
         .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .whitespace_nowrap()
-                        .overflow_hidden()
-                        .child(pane.name),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(track_count_label(pane.track_count, pane.has_next)),
-                ),
+            col()
+                .gap(4.)
+                .min_w(0.)
+                .shrink()
+                .child(label(name, TEXT_SM, SEMIBOLD, TEXT).truncate())
+                .child(label(
+                    track_count_label(track_count, has_next),
+                    TEXT_XS,
+                    REGULAR,
+                    MUTED,
+                )),
         )
         .child(
-            div()
-                .flex()
+            row()
                 .items_center()
-                .gap_2()
+                .gap(8.)
                 .child(text_button(
                     "playlist-back",
                     "Library",
                     false,
-                    cx.listener(|app, _, _, cx| {
-                        app.ui.close_playlist();
-                        cx.notify();
-                    }),
+                    |app: &mut TinyTune| app.ui.close_playlist(),
                 ))
                 .child(text_button(
                     "playlist-play",
                     "Play",
                     true,
-                    cx.listener(move |app, _, _, cx| {
-                        app.send(
-                            SpotifyCommand::PlayPlaylist {
-                                uri: playlist_uri.clone(),
-                                start_track_uri: None,
-                            },
-                            cx,
-                        );
-                    }),
+                    move |app: &mut TinyTune| {
+                        app.send(SpotifyCommand::PlayPlaylist {
+                            uri: playlist_uri.clone(),
+                            start_track_uri: None,
+                        });
+                    },
                 )),
         )
 }
 
-fn render_track_rows(
-    entity: &Entity<TinyTune>,
-    range: std::ops::Range<usize>,
-    app: &mut App,
-) -> Vec<gpui::Stateful<gpui::Div>> {
-    range
-        .map(|index| {
-            let track = entity
-                .read(app)
-                .ui
-                .selected_playlist
-                .as_ref()
-                .and_then(|detail| detail.tracks.get(index).cloned());
-            track_row(entity.clone(), index, track)
-        })
-        .collect()
-}
-
-fn track_row(
-    entity: Entity<TinyTune>,
-    index: usize,
-    track: Option<TrackSummary>,
-) -> gpui::Stateful<gpui::Div> {
-    let track = track.unwrap_or_else(TrackSummary::unavailable);
+/// Builds one virtual row. Tracks only ever append, so a row's index stays
+/// the same track while the playlist is open.
+fn track_row(app: &TinyTune, index: usize) -> El {
+    let track = app
+        .ui
+        .selected_playlist
+        .as_ref()
+        .and_then(|detail| detail.tracks.get(index).cloned())
+        .unwrap_or_else(TrackSummary::unavailable);
     let playable = track.is_playable
         && track
             .spotify_uri
@@ -206,73 +171,55 @@ fn track_row(
         track.name
     };
 
-    let mut row = div()
-        .id(("playlist-track", index))
-        .h(px(52.))
+    let mut card = row()
+        .key("card")
+        .h(52.)
         .w_full()
-        .px_3()
-        .flex()
+        .px(12.)
         .items_center()
         .justify_between()
-        .gap_3()
-        .rounded_lg()
-        .border_1()
-        .border_color(rgb(BORDER))
-        .overflow_hidden()
+        .gap(12.)
+        .radius(8.)
+        .border(1., rgb(BORDER))
         .child(
-            div()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .text_sm()
-                        .whitespace_nowrap()
-                        .overflow_hidden()
-                        .child(name),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(rgb(MUTED))
-                        .whitespace_nowrap()
-                        .overflow_hidden()
-                        .child(subtitle),
-                ),
+            col()
+                .min_w(0.)
+                .shrink()
+                .child(label(name.clone(), TEXT_SM, REGULAR, TEXT).truncate())
+                .child(label(subtitle, TEXT_XS, REGULAR, MUTED).truncate()),
         )
-        .child(div().text_xs().text_color(rgb(MUTED)).child(duration));
+        .child(label(duration, TEXT_XS, REGULAR, MUTED));
 
     if playable {
-        row = row
-            .focusable()
-            .tab_stop(true)
-            .cursor_pointer()
-            .hover(|style| style.bg(rgb(BORDER)))
-            .on_click(move |_, _, cx| {
-                entity.update(cx, |app, cx| {
-                    if let Some(command) = app.ui.play_track(index) {
-                        app.send(command, cx);
-                    }
-                });
+        card = card
+            .role("button")
+            .label(name)
+            .focusable(true)
+            .cursor(Cursor::Pointer)
+            .hover(rgb(BORDER))
+            .on_press(move |app: &mut TinyTune| {
+                if let Some(command) = app.ui.play_track(index) {
+                    app.send(command);
+                }
             });
     } else {
-        row = row.opacity(0.45);
+        card = card.opacity(0.45);
     }
-    row
+    // Virtual rows take padding rather than a stack gap.
+    row().w_full().pb(4.).child(card)
 }
 
-fn phase_message(phase: &TrackPagePhase, track_count: usize) -> gpui::AnyElement {
+fn phase_message(phase: &TrackPagePhase, track_count: usize) -> Option<El> {
     match phase {
-        TrackPagePhase::Loading if track_count > 0 => {
-            muted_line("Loading more tracks").into_any_element()
-        }
-        TrackPagePhase::Loading => muted_line("Loading tracks").into_any_element(),
-        TrackPagePhase::Ready => div().into_any_element(),
-        TrackPagePhase::Failed(error) => div()
-            .text_sm()
-            .text_color(rgb(ERROR))
-            .child(tracks_failure_message(error))
-            .into_any_element(),
+        TrackPagePhase::Loading if track_count > 0 => Some(muted_line("Loading more tracks")),
+        TrackPagePhase::Loading => Some(muted_line("Loading tracks")),
+        TrackPagePhase::Ready => None,
+        TrackPagePhase::Failed(error) => Some(label(
+            tracks_failure_message(error),
+            TEXT_SM,
+            REGULAR,
+            ERROR,
+        )),
     }
 }
 
@@ -306,41 +253,37 @@ fn format_duration(duration_ms: u32) -> String {
     format!("{}:{:02}", total_seconds / 60, total_seconds % 60)
 }
 
-fn muted_line(text: &'static str) -> gpui::Div {
-    div().text_sm().text_color(rgb(MUTED)).child(text)
+fn muted_line(text: &'static str) -> El {
+    label(text, TEXT_SM, REGULAR, MUTED)
 }
 
 fn text_button(
-    id: &'static str,
-    label: &'static str,
+    key: &'static str,
+    caption: &'static str,
     primary: bool,
-    listener: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .focusable()
-        .tab_stop(true)
-        .px_3()
-        .py_2()
-        .rounded_full()
-        .text_xs()
-        .cursor_pointer()
-        .when(primary, |button| {
-            button
-                .bg(rgb(ACCENT))
-                .text_color(rgb(ON_ACCENT))
-                .font_weight(gpui::FontWeight::BOLD)
-                .hover(|style| style.bg(rgb(ACCENT_HOVER)))
-        })
-        .when(!primary, |button| {
-            button
-                .border_1()
-                .border_color(rgb(BORDER))
-                .text_color(rgb(TEXT))
-                .hover(|style| style.bg(rgb(BORDER)))
-        })
-        .on_click(listener)
-        .child(label)
+    on_press: impl Fn(&mut TinyTune) + 'static,
+) -> El {
+    let button = row()
+        .key(key)
+        .role("button")
+        .label(caption)
+        .focusable(true)
+        .px(12.)
+        .py(8.)
+        .radius(ROUND)
+        .cursor(Cursor::Pointer)
+        .on_press(on_press);
+    if primary {
+        button
+            .fill(rgb(ACCENT))
+            .hover(rgb(ACCENT_HOVER))
+            .child(label(caption, TEXT_XS, BOLD, ON_ACCENT))
+    } else {
+        button
+            .border(1., rgb(BORDER))
+            .hover(rgb(BORDER))
+            .child(label(caption, TEXT_XS, REGULAR, TEXT))
+    }
 }
 
 #[cfg(test)]

@@ -1,15 +1,13 @@
-use std::sync::Arc;
-
-use gpui::{ObjectFit, RenderImage, StyledImage, div, img, prelude::*, px, rgb};
+use rune::{El, Pixels, SurfaceFit, col, el, row};
 
 use super::{
     app::TinyTune,
-    theme::{BORDER, MUTED, TEXT},
+    theme::{BORDER, MUTED, REGULAR, ROUND, SEMIBOLD, TEXT, TEXT_SM, TEXT_XS, label, rgb},
 };
 
 const COVER_PX: f32 = 72.;
 
-pub fn render(app: &TinyTune) -> impl IntoElement {
+pub fn render(app: &TinyTune) -> El {
     let now_playing = app.ui.now_playing();
     let title = now_playing.map_or("Nothing playing", |now_playing| {
         if now_playing.track.name.is_empty() {
@@ -22,62 +20,30 @@ pub fn render(app: &TinyTune) -> impl IntoElement {
         .map(|now_playing| now_playing.track.artist_names.join(", "))
         .filter(|artists| !artists.is_empty());
 
-    div()
-        .id("now-playing")
-        .flex()
-        .flex_1()
-        .min_w(px(0.))
+    let details = col()
+        .gap(4.)
+        .min_w(0.)
+        .shrink()
+        .child(label(title, TEXT_SM, SEMIBOLD, TEXT).truncate())
+        .children(artists.map(|artists| label(artists, TEXT_XS, REGULAR, MUTED).truncate()));
+
+    row()
+        .key("now-playing")
+        .grow(1.)
+        .min_w(0.)
         .items_center()
-        .gap_3()
+        .gap(12.)
         .child(cover(app.displayed_artwork()))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .min_w(px(0.))
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(TEXT))
-                        .whitespace_nowrap()
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .child(title.to_owned()),
-                )
-                .when_some(artists, |view, artists| {
-                    view.child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(MUTED))
-                            .whitespace_nowrap()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .child(artists),
-                    )
-                }),
-        )
+        .child(details)
 }
 
-fn cover(artwork: Option<Arc<RenderImage>>) -> impl IntoElement {
-    let show_placeholder = artwork.is_none();
-
-    div()
-        .w(px(COVER_PX))
-        .h(px(COVER_PX))
-        .flex_shrink_0()
-        .rounded_lg()
-        .overflow_hidden()
-        .when(show_placeholder, |cover| {
-            cover
-                .bg(rgb(BORDER))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(div().size_4().rounded_full().bg(rgb(MUTED)))
-        })
-        .when_some(artwork, |cover, artwork| {
-            cover.child(img(artwork).size_full().object_fit(ObjectFit::Cover))
-        })
+fn cover(artwork: Option<&Pixels>) -> El {
+    let cover = el().key("cover").size(COVER_PX, COVER_PX).radius(8.);
+    match artwork {
+        Some(artwork) => cover.pixels_fit(artwork, SurfaceFit::Fill),
+        None => cover
+            .fill(rgb(BORDER))
+            .center()
+            .child(el().size(16., 16.).radius(ROUND).fill(rgb(MUTED))),
+    }
 }

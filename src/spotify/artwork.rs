@@ -12,7 +12,7 @@ const ARTWORK_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) struct DecodedArtwork {
     pub width: u32,
     pub height: u32,
-    pub bgra: Vec<u8>,
+    pub rgba: Vec<u8>,
 }
 
 pub(crate) fn allowed_artwork_url(url: &reqwest::Url) -> bool {
@@ -79,7 +79,7 @@ fn append_limited(body: &mut Vec<u8>, chunk: &[u8], limit: usize) -> bool {
     true
 }
 
-/// Decode `bytes` and keep only a display-sized BGRA buffer.
+/// Decode `bytes` and keep only a display-sized RGBA buffer.
 /// The encoded input is borrowed and is not retained.
 pub(crate) fn decode_for_display(bytes: &[u8], edge: u32) -> Result<DecodedArtwork> {
     if edge == 0 {
@@ -94,19 +94,16 @@ pub(crate) fn decode_for_display(bytes: &[u8], edge: u32) -> Result<DecodedArtwo
     if width == 0 || height == 0 || width > edge || height > edge {
         return Err(anyhow!("decoded artwork is outside the display size"));
     }
-    let mut bgra = rgba.into_raw();
-    for pixel in bgra.as_chunks_mut::<4>().0 {
-        pixel.swap(0, 2);
-    }
+    let rgba = rgba.into_raw();
     let expected =
         pixel_len(width, height).ok_or_else(|| anyhow!("decoded artwork dimensions overflow"))?;
-    if bgra.len() != expected {
+    if rgba.len() != expected {
         return Err(anyhow!("decoded artwork buffer has an unexpected length"));
     }
     Ok(DecodedArtwork {
         width,
         height,
-        bgra,
+        rgba,
     })
 }
 
