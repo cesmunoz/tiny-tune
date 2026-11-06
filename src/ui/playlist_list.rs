@@ -1,85 +1,89 @@
-use gpui::{Context, div, prelude::*, px, rgb};
+use rune::{Cursor, El, ScrollSpec, col, row};
 
 use crate::spotify::SpotifyCommand;
 
 use super::{
     app::TinyTune,
-    theme::{ACCENT, BORDER, TEXT},
+    theme::{ACCENT, BORDER, REGULAR, ROUND, TEXT, TEXT_BASE, TEXT_XS, label, rgb},
 };
 
-pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
+pub fn render(app: &TinyTune) -> El {
     let selected_uri = app
         .ui
         .selected_playlist
         .as_ref()
-        .map(|detail| detail.summary.uri.clone());
+        .map(|detail| detail.summary.uri.as_str());
 
-    div()
-        .id("playlists")
-        .w_full()
-        .flex_1()
-        .min_h(px(0.))
-        .overflow_y_scroll()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .children(
-            app.ui
-                .playlists
-                .clone()
-                .into_iter()
-                .enumerate()
-                .map(|(index, playlist)| {
-                    let open_playlist = playlist.clone();
-                    let play_uri = playlist.uri.clone();
-                    let selected = selected_uri.as_deref() == Some(playlist.uri.as_str());
-                    div()
-                        .id(("playlist", index))
-                        .focusable()
-                        .tab_stop(true)
+    let rows = app
+        .ui
+        .playlists
+        .iter()
+        .enumerate()
+        .map(|(index, playlist)| {
+            let open_playlist = playlist.clone();
+            let play_uri = playlist.uri.clone();
+            let selected = selected_uri == Some(playlist.uri.as_str());
+            // Rows use padding, not a stack gap, so the list could be virtualized.
+            row()
+                .key(format!("playlist-{index}"))
+                .w_full()
+                .pb(8.)
+                .child(
+                    row()
+                        .key("open")
+                        .role("button")
+                        .label(playlist.name.clone())
+                        .focusable(true)
                         .w_full()
-                        .px_4()
-                        .py_3()
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(rgb(if selected { ACCENT } else { BORDER }))
-                        .cursor_pointer()
-                        .hover(|style| style.bg(rgb(BORDER)))
-                        .on_click(cx.listener(move |app, _, _, cx| {
+                        .px(16.)
+                        .py(12.)
+                        .radius(8.)
+                        .border(1., rgb(if selected { ACCENT } else { BORDER }))
+                        .hover(rgb(BORDER))
+                        .cursor(Cursor::Pointer)
+                        .on_press(move |app: &mut TinyTune| {
                             let command = app.ui.open_playlist(open_playlist.clone());
-                            app.send(command, cx);
-                        }))
-                        .flex()
+                            app.send(command);
+                        })
                         .items_center()
                         .justify_between()
-                        .gap_3()
-                        .child(div().overflow_hidden().child(playlist.name))
+                        .gap(12.)
                         .child(
-                            div()
-                                .id(("playlist-play", index))
-                                .focusable()
-                                .tab_stop(true)
-                                .px_3()
-                                .py_1()
-                                .rounded_full()
-                                .border_1()
-                                .border_color(rgb(BORDER))
-                                .text_xs()
-                                .text_color(rgb(TEXT))
-                                .cursor_pointer()
-                                .hover(|style| style.bg(rgb(BORDER)))
-                                .on_click(cx.listener(move |app, _, _, cx| {
-                                    cx.stop_propagation();
-                                    app.send(
-                                        SpotifyCommand::PlayPlaylist {
-                                            uri: play_uri.clone(),
-                                            start_track_uri: None,
-                                        },
-                                        cx,
-                                    );
-                                }))
-                                .child("Play"),
+                            label(playlist.name.clone(), TEXT_BASE, REGULAR, TEXT)
+                                .truncate()
+                                .min_w(0.)
+                                .shrink(),
                         )
-                }),
-        )
+                        .child(
+                            row()
+                                .key("play")
+                                .role("button")
+                                .label("Play")
+                                .focusable(true)
+                                .px(12.)
+                                .py(4.)
+                                .radius(ROUND)
+                                .border(1., rgb(BORDER))
+                                .hover(rgb(BORDER))
+                                .cursor(Cursor::Pointer)
+                                .on_press(move |app: &mut TinyTune| {
+                                    app.send(SpotifyCommand::PlayPlaylist {
+                                        uri: play_uri.clone(),
+                                        start_track_uri: None,
+                                    });
+                                })
+                                .child(label("Play", TEXT_XS, REGULAR, TEXT)),
+                        ),
+                )
+        });
+
+    col()
+        .key("playlists")
+        .w_full()
+        .grow(1.)
+        .min_h(0.)
+        .scroll(ScrollSpec {
+            stick_bottom: false,
+        })
+        .child(col().w_full().children(rows))
 }

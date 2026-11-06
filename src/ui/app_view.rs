@@ -1,188 +1,143 @@
-use gpui::{Context, Render, Window, div, prelude::*, px, rgb};
+use rune::{Cx, El, col, row};
 
 use super::{
     app::TinyTune,
     chrome::{self, MAIN_PADDING_X},
     header, login_view, now_playing, player_controls, playlist_list, playlist_tracks,
     state::ViewState,
-    theme::{BACKGROUND, BORDER, ERROR, MUTED, SURFACE, TEXT},
+    theme::{
+        BACKGROUND, ERROR, MUTED, REGULAR, SEMIBOLD, SURFACE, TEXT, TEXT_2XL, TEXT_SM, h_divider,
+        label, rgb, v_divider,
+    },
 };
 
-impl Render for TinyTune {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let status_color = if self.ui.view == ViewState::Failed {
-            rgb(ERROR)
-        } else {
-            rgb(MUTED)
-        };
-        let has_playlists = !self.ui.playlists.is_empty();
-        let show_tracks = self.ui.selected_playlist.is_some();
-        let connected = self.connected();
-        let title = title_for(self.ui.view);
-        let sidebar_width = px(chrome::shell_size().sidebar_width);
+/// Rune view: rebuilt from state after every handler and backend event.
+pub fn view(app: &TinyTune, _cx: &mut Cx<TinyTune>) -> El {
+    let connected = app.connected();
+    let logout = player_controls::shell_logout(connected).map(|_| player_controls::logout());
 
-        let playlists = playlist_list::render(self, cx);
-        let tracks = playlist_tracks::render(self, cx);
-        let login = login_view::render(self, cx);
-        let controls = player_controls::render(self, cx);
-        let logout = player_controls::shell_logout(connected).map(|_| player_controls::logout(cx));
-        let status = self.ui.status.clone();
-        #[cfg(debug_assertions)]
-        let dev_banner = Some(dev_banner(self));
-        #[cfg(not(debug_assertions))]
-        let dev_banner: Option<gpui::Div> = None;
-
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(rgb(BACKGROUND))
-            .text_color(rgb(TEXT))
-            .children(dev_banner)
-            .child(shell_header(div().children(logout)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_h(px(0.))
-                    .flex()
-                    .overflow_hidden()
-                    .child(library_column(sidebar_width, has_playlists, playlists))
-                    .child(stage(
-                        title,
-                        status_color,
-                        status,
-                        show_tracks,
-                        tracks,
-                        connected,
-                        login,
-                    )),
-            )
-            .when(connected, |view| view.child(player_bar(self, controls)))
+    let mut shell = col().w_full().h_full().fill(rgb(BACKGROUND));
+    #[cfg(debug_assertions)]
+    {
+        shell = shell.child(dev_banner(app)).child(h_divider());
     }
+    shell = shell.child(shell_header(logout)).child(h_divider()).child(
+        row()
+            .key("body")
+            .w_full()
+            .grow(1.)
+            .min_h(0.)
+            .child(library_column(app))
+            .child(v_divider())
+            .child(stage(app)),
+    );
+    if connected {
+        shell = shell.child(h_divider()).child(player_bar(app));
+    }
+    shell
 }
 
-fn shell_header(logout: impl IntoElement) -> impl IntoElement {
-    div()
-        .px(px(MAIN_PADDING_X))
-        .py_4()
-        .border_b_1()
-        .border_color(rgb(BORDER))
+fn shell_header(logout: Option<El>) -> El {
+    row()
+        .w_full()
+        .px(MAIN_PADDING_X)
+        .py(16.)
         .child(header::render(logout))
 }
 
-fn library_column(
-    sidebar_width: gpui::Pixels,
-    has_playlists: bool,
-    playlists: impl IntoElement,
-) -> impl IntoElement {
-    div()
-        .id("library")
-        .w(sidebar_width)
-        .flex_shrink_0()
+fn library_column(app: &TinyTune) -> El {
+    let column = col()
+        .key("library")
+        .w(chrome::shell_size().sidebar_width)
         .h_full()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .bg(rgb(SURFACE))
-        .border_r_1()
-        .border_color(rgb(BORDER))
-        .p_4()
-        .child(
-            div()
-                .text_sm()
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("Library"),
-        )
-        .when(has_playlists, |sidebar| sidebar.child(playlists))
-        .when(!has_playlists, |sidebar| {
-            sidebar.child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(MUTED))
-                    .child("Connect to see your playlists"),
-            )
-        })
+        .min_h(0.)
+        .gap(12.)
+        .fill(rgb(SURFACE))
+        .padding(16.)
+        .child(label("Library", TEXT_SM, SEMIBOLD, TEXT));
+    if app.ui.playlists.is_empty() {
+        column.child(label(
+            "Connect to see your playlists",
+            TEXT_SM,
+            REGULAR,
+            MUTED,
+        ))
+    } else {
+        column.child(playlist_list::render(app))
+    }
 }
 
-fn stage(
-    title: &'static str,
-    status_color: gpui::Rgba,
-    status: String,
-    show_tracks: bool,
-    tracks: impl IntoElement,
-    connected: bool,
-    login: impl IntoElement,
-) -> impl IntoElement {
-    div()
-        .flex_1()
-        .min_w(px(0.))
+fn stage(app: &TinyTune) -> El {
+    let status_color = if app.ui.view == ViewState::Failed {
+        ERROR
+    } else {
+        MUTED
+    };
+    let mut stage = col()
+        .key("stage")
+        .grow(1.)
+        .min_w(0.)
         .h_full()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .overflow_hidden()
-        .px(px(MAIN_PADDING_X))
-        .py_6()
-        .child(
-            div()
-                .text_2xl()
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .whitespace_nowrap()
-                .overflow_hidden()
-                .child(title),
-        )
-        .child(div().text_sm().text_color(status_color).child(status))
-        .when(show_tracks, |stage| stage.child(tracks))
-        .when(!connected, |stage| stage.child(login))
+        .min_h(0.)
+        .gap(16.)
+        .px(MAIN_PADDING_X)
+        .py(24.)
+        .child(label(title_for(app.ui.view), TEXT_2XL, SEMIBOLD, TEXT).truncate())
+        .child(label(app.ui.status.clone(), TEXT_SM, REGULAR, status_color));
+    if app.ui.selected_playlist.is_some() {
+        stage = stage.child(playlist_tracks::render(app));
+    }
+    if !app.connected() {
+        stage = stage.child(login_view::render(app));
+    }
+    stage
 }
 
 /// Resource readout for debug builds only; release builds compile it out.
 #[cfg(debug_assertions)]
-fn dev_banner(app: &TinyTune) -> gpui::Div {
-    use super::theme::{ACCENT, ON_ACCENT};
+fn dev_banner(app: &TinyTune) -> El {
+    use super::theme::{ACCENT, BOLD, ON_ACCENT, TEXT_XS};
 
     let memory = app.memory_mb.map_or_else(
         || "RSS unavailable".into(),
         |value| format!("{value} MB RSS"),
     );
-    div()
-        .flex()
+    row()
+        .key("dev-banner")
+        .w_full()
         .items_center()
-        .gap_2()
-        .px(px(MAIN_PADDING_X))
-        .py_1()
-        .border_b_1()
-        .border_color(rgb(BORDER))
-        .bg(rgb(SURFACE))
-        .text_xs()
-        .text_color(rgb(MUTED))
+        .gap(8.)
+        .px(MAIN_PADDING_X)
+        .py(4.)
+        .fill(rgb(SURFACE))
         .child(
-            div()
-                .px_1()
-                .rounded_sm()
-                .bg(rgb(ACCENT))
-                .text_color(rgb(ON_ACCENT))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("DEV"),
+            row()
+                .px(4.)
+                .radius(2.)
+                .fill(rgb(ACCENT))
+                .child(label("DEV", TEXT_XS, BOLD, ON_ACCENT)),
         )
-        .child(format!("Window ready in {} ms", app.startup_ms))
-        .child(div().flex_1())
-        .child(memory)
+        .child(label(
+            format!("Window ready in {} ms", app.startup_ms),
+            TEXT_XS,
+            REGULAR,
+            MUTED,
+        ))
+        .child(rune::spacer())
+        .child(label(memory, TEXT_XS, REGULAR, MUTED))
 }
 
-fn player_bar(app: &TinyTune, controls: impl IntoElement) -> impl IntoElement {
-    div()
+fn player_bar(app: &TinyTune) -> El {
+    row()
+        .key("player-bar")
         .w_full()
-        .flex()
         .items_center()
-        .gap_4()
-        .border_t_1()
-        .border_color(rgb(BORDER))
-        .bg(rgb(SURFACE))
-        .px(px(MAIN_PADDING_X))
-        .py_3()
+        .gap(16.)
+        .fill(rgb(SURFACE))
+        .px(MAIN_PADDING_X)
+        .py(12.)
         .child(now_playing::render(app))
-        .child(controls)
+        .child(player_controls::render(app))
 }
 
 fn title_for(state: ViewState) -> &'static str {
@@ -197,3 +152,7 @@ fn title_for(state: ViewState) -> &'static str {
         ViewState::SignedOut | ViewState::Failed => "A smaller Spotify player",
     }
 }
+
+#[cfg(test)]
+#[path = "__tests__/app_view.rs"]
+mod tests;

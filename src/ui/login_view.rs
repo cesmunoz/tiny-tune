@@ -1,44 +1,45 @@
-use gpui::{Context, div, prelude::*, rgb};
+use rune::{Cursor, El, row};
 
 use crate::spotify::SpotifyCommand;
 
 use super::{
     app::TinyTune,
     state::ViewState,
-    theme::{ACCENT, ACCENT_HOVER, ON_ACCENT},
+    theme::{ACCENT, ACCENT_HOVER, BOLD, ON_ACCENT, ROUND, TEXT_BASE, label, rgb},
 };
 
-pub fn render(app: &TinyTune, cx: &mut Context<TinyTune>) -> impl IntoElement + use<> {
-    let is_busy = matches!(
-        app.ui.view,
+const fn is_busy(view: ViewState) -> bool {
+    matches!(
+        view,
         ViewState::RestoringSession | ViewState::Authenticating | ViewState::Connecting
-    );
+    )
+}
 
-    div()
-        .id("connect")
+pub fn render(app: &TinyTune) -> El {
+    let busy = is_busy(app.ui.view);
+    let caption = if busy {
+        "Waiting for Spotify…"
+    } else {
+        "Connect & play liked songs"
+    };
+
+    row()
+        .key("connect")
+        .role("button")
+        .label(caption)
+        .focusable(true)
         .self_start()
-        .focusable()
-        .tab_stop(true)
-        .px_6()
-        .py_3()
-        .rounded_full()
-        .bg(rgb(ACCENT))
-        .text_color(rgb(ON_ACCENT))
-        .font_weight(gpui::FontWeight::BOLD)
-        .cursor_pointer()
-        .hover(|style| style.bg(rgb(ACCENT_HOVER)))
-        .when(is_busy, |button| button.opacity(0.5))
-        .on_click(cx.listener(|app, _, _, cx| {
-            if !matches!(
-                app.ui.view,
-                ViewState::RestoringSession | ViewState::Authenticating | ViewState::Connecting
-            ) {
-                app.send(SpotifyCommand::LoginAndPlayLikedSongs, cx);
+        .px(24.)
+        .py(12.)
+        .radius(ROUND)
+        .fill(rgb(ACCENT))
+        .hover(rgb(ACCENT_HOVER))
+        .opacity(if busy { 0.5 } else { 1. })
+        .cursor(Cursor::Pointer)
+        .on_press(|app: &mut TinyTune| {
+            if !is_busy(app.ui.view) {
+                app.send(SpotifyCommand::LoginAndPlayLikedSongs);
             }
-        }))
-        .child(if is_busy {
-            "Waiting for Spotify…"
-        } else {
-            "Connect & play liked songs"
         })
+        .child(label(caption, TEXT_BASE, BOLD, ON_ACCENT))
 }

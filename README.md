@@ -2,7 +2,7 @@
 
 A small, native Spotify Premium player for macOS, Windows, and Linux.
 
-Tiny Tune is built in Rust with GPUI and `librespot`. It does not embed Electron, Node, React, Chromium, or a WebView.
+Tiny Tune is built in Rust with [Rune](https://github.com/anomalyco/rune) and `librespot`. It does not embed Electron, Node, React, Chromium, or a WebView.
 
 > [!WARNING]
 > Tiny Tune uses `librespot`, an unofficial Spotify client. The upstream project states: “Using this code to connect to Spotify's API is probably forbidden by them. Use at your own risk.” Tiny Tune requires Spotify Premium, is not affiliated with Spotify, and may stop working without notice.
@@ -29,7 +29,7 @@ Session persistence and installers are not implemented yet.
 - Spotify Premium
 - Rust stable
 - macOS, Windows, or Linux
-- platform build dependencies required by [GPUI](https://gpui.rs/) and the system audio backend
+- platform build dependencies required by [Rune](https://github.com/anomalyco/rune) and the system audio backend
 
 The repo includes `mise.toml`, but any current stable Rust installation works.
 
@@ -45,6 +45,13 @@ Tiny Tune uses the client configuration provided by `librespot`, so no Spotify d
 Click **Connect & play liked songs**, finish login in the browser, and return to Tiny Tune.
 
 Debug builds show a small `DEV` banner with startup time and memory use; release builds omit it.
+
+Rune can render the window without a display or Spotify. The `library` and `player` scenes fill it with sample data:
+
+```sh
+cargo run -- --snap player.png --scene player
+cargo run -- --tree tree.json --scene library
+```
 
 To build a macOS `.app` (or Linux `.deb`) with the Tiny Tune icon:
 
@@ -76,8 +83,8 @@ The equivalent `mise run ...` tasks delegate to these Cargo commands.
 ## Architecture
 
 ```text
-GPUI main thread
-  <-> bounded command/event channels
+Rune main thread (state, view, poll)
+  <-> bounded command/event channels (a waker requests the next frame)
   <-> dedicated Tokio runtime thread
   <-> Spotify Web API + librespot Spirc/Player
   -> system audio

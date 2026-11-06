@@ -1,25 +1,19 @@
-use gpui::{div, prelude::*, rgb};
+use rune::{El, el, row};
 
-use super::theme::ACCENT;
+use super::theme::{ACCENT, BOLD, ROUND, TEXT, TEXT_XL, label, rgb};
 
-pub fn render(trailing: impl IntoElement) -> impl IntoElement {
-    div()
-        .flex()
+pub fn render(trailing: Option<El>) -> El {
+    row()
+        .w_full()
         .items_center()
         .justify_between()
-        .gap_3()
+        .gap(12.)
         .child(
-            div()
-                .flex()
+            row()
                 .items_center()
-                .gap_3()
-                .child(div().size_3().rounded_full().bg(rgb(ACCENT)))
-                .child(
-                    div()
-                        .text_xl()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .child("Tiny Tune"),
-                ),
+                .gap(12.)
+                .child(el().size(12., 12.).radius(ROUND).fill(rgb(ACCENT)))
+                .child(label("Tiny Tune", TEXT_XL, BOLD, TEXT)),
         )
-        .child(trailing)
+        .children(trailing)
 }
