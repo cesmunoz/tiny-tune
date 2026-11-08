@@ -20,6 +20,16 @@ pub(super) enum ViewState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum LibraryPhase {
+    NotLoaded,
+    Loading,
+    Retrying,
+    RetriesExhausted,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum TrackPagePhase {
     Loading,
     Ready,
@@ -46,6 +56,7 @@ pub(super) struct AppState {
     /// Player volume in percent, known once the player reports it.
     pub volume: Option<u8>,
     pub playlists: Vec<PlaylistSummary>,
+    pub library_phase: LibraryPhase,
     pub selected_playlist: Option<PlaylistDetail>,
     playlist_generation: u64,
 }
@@ -58,6 +69,7 @@ impl Default for AppState {
             playback: PlaybackState::Idle,
             volume: None,
             playlists: Vec::new(),
+            library_phase: LibraryPhase::NotLoaded,
             selected_playlist: None,
             playlist_generation: 0,
         }
@@ -65,6 +77,21 @@ impl Default for AppState {
 }
 
 impl AppState {
+    pub fn library_placeholder(&self) -> &'static str {
+        match self.library_phase {
+            LibraryPhase::NotLoaded => "Connect to see your playlists",
+            LibraryPhase::Loading => "Loading your playlists…",
+            LibraryPhase::Retrying => {
+                "Spotify is limiting playlist requests. Retrying automatically…"
+            }
+            LibraryPhase::RetriesExhausted => {
+                "Automatic retries stopped. Playlists are unavailable; try reopening Tiny Tune later."
+            }
+            LibraryPhase::Ready => "No playlists in your library",
+            LibraryPhase::Failed => "Your playlists could not be loaded",
+        }
+    }
+
     pub fn connected(&self) -> bool {
         matches!(
             self.view,
@@ -74,6 +101,12 @@ impl AppState {
 
     pub fn now_playing(&self) -> Option<&crate::domain::NowPlaying> {
         self.playback.now_playing()
+    }
+
+    pub fn selected_playlist_name(&self) -> Option<&str> {
+        self.selected_playlist
+            .as_ref()
+            .map(|detail| detail.summary.name.as_str())
     }
 
     pub fn current_image_url(&self) -> Option<&str> {
@@ -172,10 +205,32 @@ impl AppState {
                 self.view = ViewState::Ready;
                 self.status = "Connected as Tiny Tune".into();
             }
+            SpotifyEvent::PlaylistsLoading => {
+                self.library_phase = LibraryPhase::Loading;
+                self.status = "Loading your playlists…".into();
+            }
+            SpotifyEvent::PlaylistsRetryScheduled {
+                attempt,
+                max_attempts,
+            } => {
+                self.library_phase = LibraryPhase::Retrying;
+                self.status = format!(
+                    "Spotify is limiting playlist requests. Retrying automatically… ({attempt}/{max_attempts})"
+                );
+            }
+            SpotifyEvent::PlaylistsRetriesExhausted => {
+                self.library_phase = LibraryPhase::RetriesExhausted;
+                self.status = self.library_placeholder().into();
+            }
             SpotifyEvent::PlaylistsLoaded(playlists) => {
                 let count = playlists.len();
                 self.playlists = playlists;
+                self.library_phase = LibraryPhase::Ready;
                 self.status = format!("{count} playlists ready");
+            }
+            SpotifyEvent::PlaylistsFailed(error) => {
+                self.library_phase = LibraryPhase::Failed;
+                self.apply_error(&error, false);
             }
             SpotifyEvent::PlaylistTracksLoaded {
                 playlist_uri,
@@ -209,9 +264,11 @@ impl AppState {
             self.playback = PlaybackState::Idle;
             self.volume = None;
             self.playlists.clear();
+            self.library_phase = LibraryPhase::NotLoaded;
             self.selected_playlist = None;
         } else if fatal {
             self.view = ViewState::Failed;
+            self.library_phase = LibraryPhase::Failed;
             self.volume = None;
         }
     }
