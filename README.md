@@ -22,7 +22,7 @@ The player bar shows the current track while audio is playing or paused. Cover a
 
 Opening a playlist loads one page of tracks. **Load next page** requests the following page and appends it to that playlist only. Switching playlists drops the previous track list. Unavailable rows stay visible and cannot be played. If Spotify rate-limits the request, the network is unreachable, or the access token needs a refresh, the track list keeps the rows already loaded and offers **Try again**. A rejected refresh asks you to sign in again. Raw Web API JSON is not kept after it is turned into track rows.
 
-Session persistence, volume, and installers are not implemented yet.
+Session persistence and installers are not implemented yet.
 
 ## Requirements
 
@@ -43,6 +43,15 @@ mise exec -- cargo run --release
 Tiny Tune uses the client configuration provided by `librespot`, so no Spotify developer setup is required. Advanced users can copy `.env.example` to `.env` to override the client ID or loopback callback.
 
 Click **Connect & play liked songs**, finish login in the browser, and return to Tiny Tune.
+
+Debug builds show a small `DEV` banner with startup time and memory use; release builds omit it.
+
+To build a macOS `.app` (or Linux `.deb`) with the Tiny Tune icon:
+
+```sh
+cargo install cargo-bundle
+cargo bundle --release
+```
 
 ## Quality checks
 

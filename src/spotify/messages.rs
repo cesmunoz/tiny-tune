@@ -26,6 +26,9 @@ pub enum SpotifyCommand {
     TogglePlayPause,
     Previous,
     Next,
+    SetVolume {
+        percent: u8,
+    },
     LoadArtwork {
         url: String,
     },
@@ -60,6 +63,9 @@ pub enum SpotifyEvent {
         error: AppError,
     },
     PlaybackChanged(PlaybackState),
+    VolumeChanged {
+        percent: u8,
+    },
     ArtworkReady(Box<ArtworkBytes>),
     ArtworkFailed {
         url: String,

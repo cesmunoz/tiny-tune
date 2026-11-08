@@ -76,7 +76,8 @@ async fn run_supervisor(
             | SpotifyCommand::OpenPlaylist { .. }
             | SpotifyCommand::TogglePlayPause
             | SpotifyCommand::Previous
-            | SpotifyCommand::Next => {
+            | SpotifyCommand::Next
+            | SpotifyCommand::SetVolume { .. } => {
                 let _ = events
                     .send(SpotifyEvent::RecoverableError(AppError::BackendUnavailable))
                     .await;

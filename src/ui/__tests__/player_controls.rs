@@ -1,5 +1,8 @@
 use super::PlayerAction;
-use crate::spotify::SpotifyCommand;
+use crate::{
+    spotify::{SpotifyCommand, SpotifyEvent},
+    ui::state::AppState,
+};
 
 #[test]
 fn actions_define_stable_ui_metadata_and_commands() {
@@ -34,7 +37,7 @@ fn actions_define_stable_ui_metadata_and_commands() {
     for (action, id, label, command) in cases {
         assert_eq!(action.id(), id);
         assert_eq!(action.label(), label);
-        assert_eq!(action.command(), command);
+        assert_eq!(action.command(&AppState::default()), Some(command));
         assert!(action.icon().starts_with(b"<svg"));
     }
 }
@@ -46,6 +49,34 @@ fn play_pause_is_the_only_primary_action() {
     assert!(!PlayerAction::Previous.is_primary());
     assert!(!PlayerAction::Next.is_primary());
     assert!(!PlayerAction::Logout.is_primary());
+    assert!(!PlayerAction::VolumeDown.is_primary());
+    assert!(!PlayerAction::VolumeUp.is_primary());
+}
+
+#[test]
+fn volume_actions_step_the_reported_volume() {
+    let mut ui = AppState::default();
+    assert_eq!(PlayerAction::VolumeUp.command(&ui), None);
+
+    ui.apply(SpotifyEvent::VolumeChanged { percent: 50 });
+    assert_eq!(
+        PlayerAction::VolumeUp.command(&ui),
+        Some(SpotifyCommand::SetVolume { percent: 60 })
+    );
+    assert_eq!(
+        PlayerAction::VolumeDown.command(&ui),
+        Some(SpotifyCommand::SetVolume { percent: 40 })
+    );
+
+    for (action, id, label) in [
+        (PlayerAction::VolumeDown, "volume-down", "Volume down"),
+        (PlayerAction::VolumeUp, "volume-up", "Volume up"),
+    ] {
+        assert_eq!(action.id(), id);
+        assert_eq!(action.label(), label);
+        assert!(action.is_quiet());
+        assert!(action.icon().starts_with(b"<svg"));
+    }
 }
 
 #[test]

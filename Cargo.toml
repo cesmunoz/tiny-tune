@@ -9,6 +9,14 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+# Read by `cargo bundle` (macOS .app, Linux .deb) to set the app name and icon.
+[package.metadata.bundle]
+name = "Tiny Tune"
+identifier = "com.tiny-tune.app"
+icon = ["assets/app-icon@2x.png"]
+category = "public.app-category.music"
+short_description = "A smaller Spotify player"
+
 [dependencies]
 anyhow = "1"
 async-channel = "2.5"
