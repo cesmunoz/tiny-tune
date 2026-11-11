@@ -1,12 +1,12 @@
 use crate::domain::{AppError, Page, PageCursor, PlaybackState, PlaylistSummary, TrackSummary};
 
-/// Display-sized BGRA pixels. The encoded download is not retained.
+/// Display-sized straight-alpha sRGB RGBA pixels. The encoded download is not retained.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtworkBytes {
     pub url: String,
     pub width: u32,
     pub height: u32,
-    pub bgra: Vec<u8>,
+    pub rgba: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

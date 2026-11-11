@@ -38,7 +38,7 @@ fn actions_define_stable_ui_metadata_and_commands() {
         assert_eq!(action.id(), id);
         assert_eq!(action.label(), label);
         assert_eq!(action.command(&AppState::default()), Some(command));
-        assert!(action.icon().starts_with(b"<svg"));
+        assert!(action.icon().name.starts_with("tiny-tune-"));
     }
 }
 
@@ -75,7 +75,7 @@ fn volume_actions_step_the_reported_volume() {
         assert_eq!(action.id(), id);
         assert_eq!(action.label(), label);
         assert!(action.is_quiet());
-        assert!(action.icon().starts_with(b"<svg"));
+        assert!(action.icon().name.starts_with("tiny-tune-"));
     }
 }
 

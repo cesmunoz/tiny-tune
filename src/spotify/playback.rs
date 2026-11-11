@@ -349,7 +349,7 @@ fn artwork_bytes(url: String, decoded: DecodedArtwork) -> ArtworkBytes {
         url,
         width: decoded.width,
         height: decoded.height,
-        bgra: decoded.bgra,
+        rgba: decoded.rgba,
     }
 }
 

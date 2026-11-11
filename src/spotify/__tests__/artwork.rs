@@ -28,7 +28,7 @@ fn stops_appending_once_the_byte_limit_is_reached() {
 }
 
 #[test]
-fn decodes_near_display_size_and_swaps_to_bgra() {
+fn decodes_near_display_size_as_rgba() {
     let image = RgbaImage::from_pixel(300, 180, Rgba([10, 20, 30, 255]));
     let mut encoded = Vec::new();
     image
@@ -41,8 +41,8 @@ fn decodes_near_display_size_and_swaps_to_bgra() {
     assert!(decoded.height <= 128);
     assert_eq!(decoded.width, 128);
     assert_eq!(
-        decoded.bgra.len(),
+        decoded.rgba.len(),
         usize::try_from(decoded.width).unwrap() * usize::try_from(decoded.height).unwrap() * 4
     );
-    assert_eq!(&decoded.bgra[..4], &[30, 20, 10, 255]);
+    assert_eq!(&decoded.rgba[..4], &[10, 20, 30, 255]);
 }

@@ -21,10 +21,10 @@ short_description = "A smaller Spotify player"
 anyhow = "1"
 async-channel = "2.5"
 dotenvy = "0.15"
-# gpui_platform is not published independently yet, so both crates are pinned
-# to the same Zed revision for reproducible builds.
-gpui = { git = "https://github.com/zed-industries/zed", rev = "309f91f564fa267820e5d426daeeffafc2599530", default-features = false, features = ["font-kit", "wayland", "x11", "windows-manifest"] }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "309f91f564fa267820e5d426daeeffafc2599530", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+# Rune is pre-release and has no published versions, so it is pinned to a
+# revision of its `dev` branch (which is never rewritten). Default features
+# such as Ogg audio, SVG images and Linux D-Bus services are not needed.
+rune = { git = "https://github.com/anomalyco/rune", rev = "781e2b6d87cd5f32d6f4365956fad4baaf24ee50", default-features = false, features = ["accessibility", "metal-backend"] }
 librespot = { version = "=0.8.0", default-features = false, features = ["native-tls", "rodio-backend"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -35,7 +35,6 @@ sysinfo = { version = "0.36", default-features = false, features = ["system"] }
 keyring = "=4.2.0"
 secrecy = "=0.10.3"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-smallvec = "1"
 
 [dev-dependencies]
 serde_json = "1"
