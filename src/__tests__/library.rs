@@ -82,3 +82,14 @@ fn accepts_playlist_and_track_uris_used_for_playback() {
     ));
     assert!(!is_spotify_context_uri("spotify:playlist:abc?market=US"));
 }
+
+#[test]
+fn rate_limit_message_does_not_present_a_stale_countdown() {
+    assert_eq!(
+        crate::domain::AppError::RateLimited {
+            retry_after_seconds: 44
+        }
+        .user_message(),
+        "Spotify is limiting requests. Try again later."
+    );
+}

@@ -136,9 +136,7 @@ impl AppError {
                 "Connected, but the session could not be saved securely".into()
             }
             Self::BackendUnavailable => "Spotify backend is unavailable".into(),
-            Self::RateLimited {
-                retry_after_seconds,
-            } => format!("Spotify is rate limiting requests. Try again in {retry_after_seconds}s"),
+            Self::RateLimited { .. } => "Spotify is limiting requests. Try again later.".into(),
             Self::Offline => "Spotify could not be reached. Try again.".into(),
             Self::Unexpected => "Tiny Tune could not complete the Spotify request".into(),
         }

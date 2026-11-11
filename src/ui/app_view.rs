@@ -56,12 +56,7 @@ fn library_column(app: &TinyTune) -> El {
         .padding(16.)
         .child(label("Library", TEXT_SM, SEMIBOLD, TEXT));
     if app.ui.playlists.is_empty() {
-        column.child(label(
-            "Connect to see your playlists",
-            TEXT_SM,
-            REGULAR,
-            MUTED,
-        ))
+        column.child(label(app.ui.library_placeholder(), TEXT_SM, REGULAR, MUTED))
     } else {
         column.child(playlist_list::render(app))
     }
@@ -73,6 +68,10 @@ fn stage(app: &TinyTune) -> El {
     } else {
         MUTED
     };
+    let title = app
+        .ui
+        .selected_playlist_name()
+        .map_or_else(|| title_for(app.ui.view).to_owned(), str::to_owned);
     let mut stage = col()
         .key("stage")
         .grow(1.)
@@ -82,7 +81,7 @@ fn stage(app: &TinyTune) -> El {
         .gap(16.)
         .px(MAIN_PADDING_X)
         .py(24.)
-        .child(label(title_for(app.ui.view), TEXT_2XL, SEMIBOLD, TEXT).truncate())
+        .child(label(title, TEXT_2XL, SEMIBOLD, TEXT).truncate())
         .child(label(app.ui.status.clone(), TEXT_SM, REGULAR, status_color));
     if app.ui.selected_playlist.is_some() {
         stage = stage.child(playlist_tracks::render(app));
